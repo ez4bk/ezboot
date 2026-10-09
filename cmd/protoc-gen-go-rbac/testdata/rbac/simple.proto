@@ -1,0 +1,114 @@
+syntax = "proto3";
+
+package ezboot.foo.bar;
+option go_package = "ezboot/foo/bar";
+
+import "rbac/rbac.proto";
+
+import "google/api/annotations.proto";
+import "google/protobuf/empty.proto";
+
+
+service RbacSimpleService {
+
+    option (rbac.hierarchy) = {
+        role: [
+            {
+                name: 'Role:ResourceFullAccess',
+                desc: 'Full access for Resource'
+                extends: [
+                    {
+                        name: 'Role:ResourceWriteOnly',
+                        desc: 'Write-Only access for Resource'
+                        extends: [
+                            {
+                                name: 'Role:ResourceReadOnly'
+                                desc: 'Read-Only access for Resource'
+                            }
+                        ],
+                    },
+                    {
+                        name: 'Role:ResourceDangerOnly'
+                        desc: 'Danger-Operation access for Resource'
+                    }
+                ]
+            }
+        ]
+    };
+
+    rpc ListResource(google.protobuf.Empty) returns (google.protobuf.Empty) {
+        option (rbac.role) = {
+            name: 'Role:ResourceReadOnly'
+        };
+        option (google.api.http) = {
+            get: '/api/v1/resource'
+        };
+    }
+
+    rpc GetResource(WithIdParams) returns (google.protobuf.Empty) {
+        option (rbac.role) = {
+            name: 'Role:ResourceReadOnly'
+        };
+        option (google.api.http) = {
+            get: '/api/v1/resource/{id}'
+        };
+    }
+
+    rpc CreateResource(google.protobuf.Empty) returns (google.protobuf.Empty) {
+        option (rbac.role) = {
+            name: 'Role:ResourceWriteOnly'
+        };
+        option (google.api.http) = {
+            post: '/api/v1/resource',
+            body: '*'
+        };
+    }
+
+    rpc UpdateResource(WithIdParams) returns (google.protobuf.Empty) {
+        option (rbac.role) = {
+            name: 'Role:ResourceWriteOnly'
+        };
+        option (google.api.http) = {
+            put: '/api/v1/resource/{id}',
+            body: '*',
+
+            additional_bindings: {
+                patch: '/api/v1/resource/{id}',
+                body: '*',
+            }
+        };
+    }
+
+    rpc DeleteResource(google.protobuf.Empty) returns (google.protobuf.Empty) {
+        option (rbac.role) = {
+            name: 'Role:ResourceDangerOnly'
+        };
+        option (google.api.http) = {
+            delete: '/api/v1/resource/{id}'
+        };
+    }
+
+    rpc EnableResource(WithIdParams) returns (google.protobuf.Empty) {
+        option (rbac.role) = {
+            name: 'Role:ResourceDangerOnly'
+        };
+        option (google.api.http) = {
+            post: '/api/v1/resource/{id}/enable',
+            body: '*'
+        };
+    }
+
+    rpc ListResourceTypes(google.protobuf.Empty) returns (google.protobuf.Empty) {
+        option (rbac.role) = {
+            name: 'Role:Anonymous',
+        };
+        option (google.api.http) = {
+            get: '/api/v1/resource/{id}/types'
+        };
+    }
+
+}
+
+message WithIdParams {
+    string id = 1;
+}

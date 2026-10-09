@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package ezboot.rbac;
+option go_package = "github.com/ez4bk/ezboot/rbac";
+
+import "google/protobuf/descriptor.proto";
+
+
+extend google.protobuf.MethodOptions {
+    Role role = 199875362;
+}
+
+message Role {
+    string name = 1;
+    string desc = 2;
+}
+
+extend google.protobuf.ServiceOptions {
+    Hierarchy hierarchy = 199875863;
+}
+
+message Hierarchy {
+    message Role {
+        string name = 1;
+        string desc = 2;
+        repeated Role extends = 3;
+    }
+
+    repeated Role role = 1;
+}
+

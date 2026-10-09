@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package ezboot.internal.pberr;
+option go_package = "github.com/ez4bk/ezboot/internal/pberr";
+
+
+// 配置 gRPC 错误对应的状态码
+message WithHttpStatus {
+    // Http状态码
+    uint32 http_code = 1;
+}
+
+message WithCauseError {
+    string cause_error = 1;
+}

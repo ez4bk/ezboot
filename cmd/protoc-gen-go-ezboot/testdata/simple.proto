@@ -1,0 +1,13 @@
+syntax = "proto3";
+
+package ezboot.foo.bar;
+option go_package = "ezboot/foo/bar";
+
+import "cmd/protoc-gen-go-ezboot/testdata/datatype.proto";
+
+
+service SimpleService {
+
+    rpc Echo(EchoMessage) returns (EchoMessage);
+
+}

@@ -1,0 +1,3 @@
+g, alice, Role:ResourceReadOnly
+g, bob, Role:ResourceFullAccess
+g, root, Role:Superuser

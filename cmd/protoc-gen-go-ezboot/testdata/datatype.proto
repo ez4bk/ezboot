@@ -1,0 +1,9 @@
+syntax = "proto3";
+
+package ezboot.foo.bar;
+option go_package = "ezboot/foo/bar";
+
+
+message EchoMessage {
+    string message = 1;
+}
