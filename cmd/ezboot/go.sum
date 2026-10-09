@@ -1,9 +1,9 @@
 cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 cloud.google.com/go v0.34.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
-github.com/ez4bk/ezboot v0.2.0 h1:aoI1JGU9i5zWlVVvUMzdE0cgXio+qX/HRHHGmsFZSco=
-github.com/ez4bk/ezboot v0.2.0/go.mod h1:boC5xsuj+q5ThJpvLnSFo0XKni4qQCAZQmypTAvYo5Y=
-github.com/ez4bk/ezboot/tools/reflect v0.2.0 h1:v+5d9ARhi6MxxL7wanZhIASn+Momecu1bgSP8St3f6g=
-github.com/ez4bk/ezboot/tools/reflect v0.2.0/go.mod h1:Ijkehgnrn/MZpfvFsYGZ3L/+3pSC+oqcGE/PZGhf5sw=
+github.com/ez4bk/ezboot v0.2.0 h1:TptHuryQCGN9Oe+V3VoNkXQPC7nnWtoZuD0GWeBM2Zk=
+github.com/ez4bk/ezboot v0.2.0/go.mod h1:Y8Hp7fA7foiaFHoHDKCrgA9gjeeCiu+NaCSmJ/RSwmI=
+github.com/ez4bk/ezboot/tools/reflect v0.2.0 h1:vjWm/9jr5HvjbYaIeHurfdN3DyB7q5C/ugTexh6cdjY=
+github.com/ez4bk/ezboot/tools/reflect v0.2.0/go.mod h1:o+GxHhoaY669S8HypFjQiKemZPiIxqOj/cKtnuRrsmE=
 dario.cat/mergo v1.0.2 h1:85+piFYR1tMbRrLcDwR18y4UKJ3aH1Tbzi24VRW1TK8=
 dario.cat/mergo v1.0.2/go.mod h1:E/hbnu0NxMFBjpMIE34DRGLWqDy0g5FuKDhCb31ngxA=
 filippo.io/edwards25519 v1.1.0 h1:FNf4tywRC1HmFuKW5xopWpigGjJKiJSV0Cqo0cJWDaA=

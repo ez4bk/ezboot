@@ -7,7 +7,7 @@ image: latest
 .PHONY: latest
 latest: 1.27
 	docker tag ghcr.io/ez4bk/devops/go-compiler:$^ ghcr.io/ez4bk/devops/go-compiler:$@
-	docker push $(DOCKER_REGISTRY)/devops/go-compiler:$@
+	docker push ghcr.io/ez4bk/devops/go-compiler:$@
 
 .PHONY: 1.27
 1.27: Dockerfile

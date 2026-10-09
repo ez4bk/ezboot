@@ -2,12 +2,7 @@ override DOCKER_TTY ?= -t
 override DOCKER_REGISTRY ?= ghcr.io/ez4bk/devops
 override RT_PROTOBUF_GENERATOR := ghcr.io/ez4bk/devops/protoc-buf
 
-ifdef DOCKER_HOST
-override BUF_CACHE := /UserHome/hanna/.cache/buf
-else
 override BUF_CACHE := $(HOME)/.cache/buf
-endif
-
 
 .PHONY: protobuf
 .DEFAULT_GOAL: protobuf
