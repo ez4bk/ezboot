@@ -150,6 +150,11 @@ func (r *Reflection) Close() error {
 
 // init 初始化并导出数据库的表结构信息
 func (r *Reflection) init() error {
+	// 添加 POINT 类型支持
+	if _, ok := schemas.SqlTypes["POINT"]; !ok {
+		schemas.SqlTypes["POINT"] = schemas.BLOB_TYPE
+	}
+
 	tables, err := r.engine.DBMetas()
 	if err != nil {
 		return errors.Wrap(err, "failed to retrieves the table schemas")

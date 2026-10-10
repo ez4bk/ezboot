@@ -8,6 +8,16 @@ RUN go install github.com/envoyproxy/protoc-gen-validate@latest
 RUN go install github.com/ez4bk/ezboot/cmd/protoc-gen-go-ezboot@main
 RUN go install github.com/ez4bk/ezboot/cmd/protoc-gen-go-rbac@main
 
+# TODO: 版本稳定后恢复
+WORKDIR /src
+COPY go.mod go.sum ./
+COPY cmd/protoc-gen-go-ezboot ./cmd/protoc-gen-go-ezboot
+COPY cmd/protoc-gen-go-rbac ./cmd/protoc-gen-go-rbac
+COPY rbac ./rbac
+COPY utils ./utils
+RUN cd cmd/protoc-gen-go-ezboot && go install
+RUN cd cmd/protoc-gen-go-rbac && go install
+
 
 FROM ubuntu:24.04
 
