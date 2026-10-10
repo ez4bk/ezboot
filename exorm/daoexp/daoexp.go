@@ -5,6 +5,7 @@ import (
 
 	"xorm.io/xorm"
 
+	"github.com/ez4bk/ezboot"
 	"github.com/ez4bk/ezboot/elog"
 	"github.com/ez4bk/ezboot/with"
 )

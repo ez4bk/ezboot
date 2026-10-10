@@ -1,6 +1,7 @@
 package elog
 
 import (
+	"github.com/ez4bk/ezboot"
 	"github.com/pkg/errors"
 )
 

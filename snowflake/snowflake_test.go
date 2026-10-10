@@ -121,13 +121,13 @@ func TestString(t *testing.T) {
 		t.Fatalf("pID %v != oID %v", pID, oID)
 	}
 
-	ms := `1116766490855473152`
+	ms := `3Amry1HHf7U`
 	_, err = ParseString(ms)
 	if err != nil {
 		t.Fatalf("error parsing, %s", err)
 	}
 
-	ms = `1112316766490855473152`
+	ms = `3Amry1HHf7UI`
 	_, err = ParseString(ms)
 	if err == nil {
 		t.Fatalf("no error parsing %s", ms)
@@ -253,13 +253,13 @@ func TestBase64(t *testing.T) {
 		t.Fatalf("pID %v != oID %v", pID, oID)
 	}
 
-	ms := `MTExNjgxOTQ5NDY2MDk5NzEyMA==`
+	ms := `M0FtcnkxSEhmN1U=`
 	_, err = ParseBase64(ms)
 	if err != nil {
 		t.Fatalf("error parsing, %s", err)
 	}
 
-	ms = `MTExNjgxOTQ5NDY2MDk5NzEyMA`
+	ms = `M0FtcnkxSEhmN1VJ`
 	_, err = ParseBase64(ms)
 	if err == nil {
 		t.Fatalf("no error parsing, %s", err)
@@ -283,13 +283,13 @@ func TestBytes(t *testing.T) {
 		t.Fatalf("pID %v != oID %v", pID, oID)
 	}
 
-	ms := []byte{0x31, 0x31, 0x31, 0x36, 0x38, 0x32, 0x31, 0x36, 0x37, 0x39, 0x35, 0x37, 0x30, 0x34, 0x31, 0x39, 0x37, 0x31, 0x32}
+	ms := []byte(`3Amry1HHf7U`)
 	_, err = ParseBytes(ms)
 	if err != nil {
 		t.Fatalf("error parsing, %#v", err)
 	}
 
-	ms = []byte{0xFF, 0xFF, 0xFF, 0x31, 0x31, 0x31, 0x36, 0x38, 0x32, 0x31, 0x36, 0x37, 0x39, 0x35, 0x37, 0x30, 0x34, 0x31, 0x39, 0x37, 0x31, 0x32}
+	ms = []byte(`3Amry1HHf7UI`)
 	_, err = ParseBytes(ms)
 	if err == nil {
 		t.Fatalf("no error parsing, %#v", err)

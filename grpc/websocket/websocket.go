@@ -8,6 +8,7 @@ import (
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 
+	"github.com/ez4bk/ezboot"
 	"github.com/ez4bk/ezboot/grpc/gateway"
 )
 

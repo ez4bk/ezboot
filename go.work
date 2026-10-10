@@ -1,0 +1,9 @@
+go 1.27.2
+
+use (
+	.
+	./cmd/ezboot
+	./cmd/protoc-gen-go-ezboot
+	./cmd/protoc-gen-go-rbac
+	./tools/reflect
+)
