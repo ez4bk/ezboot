@@ -3,7 +3,7 @@ module github.com/ez4bk/ezboot/cmd/ezboot
 go 1.27
 
 require (
-	github.com/ez4bk/ezboot v0.2.1
+	github.com/ez4bk/ezboot v0.2.2
 	github.com/ez4bk/ezboot/tools/reflect v0.2.0
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/fatih/color v1.18.0

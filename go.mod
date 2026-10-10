@@ -3,6 +3,7 @@ module github.com/ez4bk/ezboot
 go 1.27
 
 retract v0.2.0
+
 retract v0.2.1
 
 require (

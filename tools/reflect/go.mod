@@ -2,16 +2,16 @@ module github.com/ez4bk/ezboot/tools/reflect
 
 go 1.27
 
+retract v0.2.0
+
 require (
 	github.com/dave/jennifer v1.6.0
-	github.com/ez4bk/ezboot v0.2.1
+	github.com/ez4bk/ezboot v0.2.2
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/iancoleman/strcase v0.2.0
 	github.com/pkg/errors v0.9.1
 	xorm.io/xorm v1.3.11
 )
-
-replace github.com/ez4bk/ezboot => ../..
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
