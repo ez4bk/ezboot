@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/AlecAivazis/survey/v2"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/iancoleman/strcase"
 	"github.com/pkg/errors"

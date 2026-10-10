@@ -290,13 +290,12 @@ func ParseBase64(id string) (ID, error) {
 
 // Bytes returns a byte slice of the snowflake ID
 func (f ID) Bytes() []byte {
-	return []byte(f.String())
+	return []byte(f.Base58())
 }
 
 // ParseBytes converts a byte slice into a snowflake ID
 func ParseBytes(id []byte) (ID, error) {
-	i, err := strconv.ParseInt(string(id), 10, 64)
-	return ID(i), err
+	return ParseBase58(id)
 }
 
 // IntBytes returns an array of bytes of the snowflake ID, encoded as a
@@ -353,4 +352,12 @@ func (f *ID) UnmarshalJSON(b []byte) error {
 
 	*f = ID(i)
 	return nil
+}
+
+func (f ID) MarshalBinary() ([]byte, error) {
+	return strconv.AppendInt(nil, int64(f), 10), nil
+}
+
+func (f ID) NotZero() bool {
+	return f != 0
 }

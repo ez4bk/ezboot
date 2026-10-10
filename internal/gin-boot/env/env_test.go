@@ -8,6 +8,7 @@ import (
 )
 
 func Test_Env_empty(t *testing.T) {
+	t.Setenv(EnvNameMode, "")
 	InitEnv("")
 	t.Log(Env)
 	assert.Equal(t, ModeLocal, Env.Mode)
@@ -16,6 +17,7 @@ func Test_Env_empty(t *testing.T) {
 }
 
 func Test_Env_ok(t *testing.T) {
+	t.Setenv(EnvNameMode, "")
 	InitEnv("ok.env")
 	t.Log(Env)
 	assert.Equal(t, ModeTest, Env.Mode)
@@ -24,12 +26,14 @@ func Test_Env_ok(t *testing.T) {
 }
 
 func Test_Env_err(t *testing.T) {
+	t.Setenv(EnvNameMode, "")
 	assert.Panics(t, func() {
 		InitEnv("err.env")
 	})
 }
 
 func Test_Env_os(t *testing.T) {
+	t.Setenv(EnvNameMode, "")
 	os.Setenv(EnvNameMode, "prod")
 	InitEnv("")
 	t.Log(Env)

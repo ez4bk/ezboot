@@ -1,9 +1,5 @@
 cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 cloud.google.com/go v0.34.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
-github.com/ez4bk/ezboot v0.2.0 h1:TptHuryQCGN9Oe+V3VoNkXQPC7nnWtoZuD0GWeBM2Zk=
-github.com/ez4bk/ezboot v0.2.0/go.mod h1:Y8Hp7fA7foiaFHoHDKCrgA9gjeeCiu+NaCSmJ/RSwmI=
-github.com/ez4bk/ezboot/tools/reflect v0.2.0 h1:vjWm/9jr5HvjbYaIeHurfdN3DyB7q5C/ugTexh6cdjY=
-github.com/ez4bk/ezboot/tools/reflect v0.2.0/go.mod h1:o+GxHhoaY669S8HypFjQiKemZPiIxqOj/cKtnuRrsmE=
 dario.cat/mergo v1.0.2 h1:85+piFYR1tMbRrLcDwR18y4UKJ3aH1Tbzi24VRW1TK8=
 dario.cat/mergo v1.0.2/go.mod h1:E/hbnu0NxMFBjpMIE34DRGLWqDy0g5FuKDhCb31ngxA=
 filippo.io/edwards25519 v1.1.0 h1:FNf4tywRC1HmFuKW5xopWpigGjJKiJSV0Cqo0cJWDaA=
@@ -88,6 +84,12 @@ github.com/envoyproxy/go-control-plane v0.9.0/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymF
 github.com/envoyproxy/go-control-plane v0.9.1-0.20191026205805-5f8ba28d4473/go.mod h1:YTl/9mNaCwkRvm6d1a2C3ymFceY/DCBVvsKhRF0iEA4=
 github.com/envoyproxy/go-control-plane v0.9.4/go.mod h1:6rpuAdCZL397s3pYoYcLgu1mIlRU8Am5FuJP05cCM98=
 github.com/envoyproxy/protoc-gen-validate v0.1.0/go.mod h1:iSmxcyjqTsJpI2R4NaDN7+kN2VEUnK/pcBlmesArF7c=
+github.com/ez4bk/ezboot v0.2.0 h1:TptHuryQCGN9Oe+V3VoNkXQPC7nnWtoZuD0GWeBM2Zk=
+github.com/ez4bk/ezboot v0.2.0/go.mod h1:Y8Hp7fA7foiaFHoHDKCrgA9gjeeCiu+NaCSmJ/RSwmI=
+github.com/ez4bk/ezboot v0.2.1 h1:zdT2zjXTt9lr8vl3Yo/E34C+1NtqP6yMGIP8/VLqZwE=
+github.com/ez4bk/ezboot v0.2.1/go.mod h1:8yN5fRGIC2ouhnOgebkoIkABlpsiDtKq2RKJm4Vwvn4=
+github.com/ez4bk/ezboot/tools/reflect v0.2.0 h1:vjWm/9jr5HvjbYaIeHurfdN3DyB7q5C/ugTexh6cdjY=
+github.com/ez4bk/ezboot/tools/reflect v0.2.0/go.mod h1:o+GxHhoaY669S8HypFjQiKemZPiIxqOj/cKtnuRrsmE=
 github.com/fatih/color v1.18.0 h1:S8gINlzdQ840/4pfAwic/ZE0djQEH3wM94VfqLTZcOM=
 github.com/fatih/color v1.18.0/go.mod h1:4FelSpRwEGDpQ12mAdzqdOukCy4u8WUtOY6lkT/6HfU=
 github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHkI4W8=
