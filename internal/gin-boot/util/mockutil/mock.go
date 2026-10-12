@@ -3,7 +3,7 @@
 package mockutil
 
 import (
-	"github.com/bouk/monkey"
+	"bou.ke/monkey"
 )
 
 // Cancel Cancel
