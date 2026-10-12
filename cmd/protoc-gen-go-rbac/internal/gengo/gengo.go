@@ -11,17 +11,18 @@ import (
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/types/pluginpb"
 
-	"github.com/ez4bk/ezboot/cmd/protoc-gen-go-rbac/internal/gengo/template"
 	"github.com/ez4bk/ezboot/rbac"
+
+	"github.com/ez4bk/ezboot/cmd/protoc-gen-go-rbac/internal/gengo/template"
 )
 
 // SupportedFeatures reports the set of supported protobuf language features
 var SupportedFeatures = uint64(pluginpb.CodeGeneratorResponse_FEATURE_PROTO3_OPTIONAL)
 
 var (
-	pkgCasbin      = protogen.GoImportPath("github.com/casbin/casbin/v2")
-	pkgCasbinRbac  = protogen.GoImportPath("github.com/casbin/casbin/v2/rbac")
-	pkgCasbinModel = protogen.GoImportPath("github.com/casbin/casbin/v2/model")
+	pkgCasbin      = protogen.GoImportPath("github.com/casbin/casbin/v3")
+	pkgCasbinRbac  = protogen.GoImportPath("github.com/casbin/casbin/v3/rbac")
+	pkgCasbinModel = protogen.GoImportPath("github.com/casbin/casbin/v3/model")
 
 	pkgRbac = protogen.GoImportPath("github.com/ez4bk/ezboot/rbac")
 )

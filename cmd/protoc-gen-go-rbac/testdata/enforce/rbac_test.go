@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	fileadapter "github.com/casbin/casbin/v2/persist/file-adapter"
+	fileadapter "github.com/casbin/casbin/v3/persist/file-adapter"
 
 	bar "github.com/ez4bk/ezboot/cmd/protoc-gen-go-rbac/testdata/rbac"
 	"github.com/ez4bk/ezboot/rbac"
@@ -37,7 +37,7 @@ func Test_Enforcer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err = e.LoadSysPolicy(bar.LoadSimpleServicePolicy); err != nil {
+	if err = e.LoadSysPolicy(bar.LoadRbacSimpleServicePolicy); err != nil {
 		t.Fatal(err)
 	}
 
