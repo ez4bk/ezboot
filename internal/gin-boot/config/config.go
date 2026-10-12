@@ -30,9 +30,7 @@ type Config struct {
 		PprofHost            string `yaml:"pprof_host"`
 		PprofPort            int    `yaml:"pprof_port"`
 		DBMigration          struct {
-			AutoMigrate  bool   `yaml:"auto_migrate"`
-			ForceMigrate *bool  `yaml:"force_migrate"`
-			Version      string `yaml:"version"`
+			AutoMigrate bool `yaml:"auto_migrate"`
 		} `yaml:"db_migration"`
 
 		Middleware struct {

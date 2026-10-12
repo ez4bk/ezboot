@@ -20,6 +20,7 @@ require (
 	github.com/go-redis/redis v6.15.9+incompatible
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/go-viper/mapstructure/v2 v2.5.0
+	github.com/golang-migrate/migrate/v4 v4.19.1
 	github.com/golang/protobuf v1.5.4
 	github.com/google/wire v0.7.0
 	github.com/gorilla/mux v1.8.1
@@ -52,8 +53,6 @@ require (
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/go-playground/validator.v9 v9.31.0
 	gopkg.in/yaml.v2 v2.4.0
-	gorm.io/driver/mysql v1.6.0
-	gorm.io/gorm v1.31.2
 	nhooyr.io/websocket v1.8.17
 	xorm.io/xorm v1.4.3
 )
@@ -95,7 +94,6 @@ require (
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jcchavezs/porto v0.7.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
-	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.20.1 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
@@ -143,7 +141,6 @@ require (
 	golang.org/x/telemetry v0.0.0-20261010193011-f71dc92da45e // indirect
 	golang.org/x/term v0.47.0 // indirect
 	golang.org/x/tools v0.52.0 // indirect
-	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20261005182115-fad411399dd8 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261005182115-fad411399dd8 // indirect
 	google.golang.org/grpc/examples v0.0.0-20220824164622-641dc8710cee // indirect

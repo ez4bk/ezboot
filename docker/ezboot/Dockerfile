@@ -5,7 +5,6 @@ COPY . .
 
 RUN cd cmd/ezboot && \
     go mod edit -replace github.com/ez4bk/ezboot=../.. && \
-    go mod tidy && \
     CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/ezboot .
 
 

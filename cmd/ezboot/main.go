@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 
-	"github.com/ez4bk/ezboot"
 	"github.com/spf13/cobra"
 
 	"github.com/ez4bk/ezboot/signal"
@@ -15,10 +14,12 @@ import (
 )
 
 func main() {
+	const version = "v0.2.6"
+
 	root := &cobra.Command{
 		Use:           "ezboot",
 		Short:         "An elegant toolkit for Golang microservice",
-		Version:       ezboot.Version,
+		Version:       version,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}

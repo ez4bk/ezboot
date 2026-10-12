@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io/fs"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
@@ -207,6 +206,10 @@ func Default() *Server {
 		util.ChkErr(err)
 	}
 
+	if err := doMigration(); err != nil {
+		util.ChkErr(err)
+	}
+
 	// init middlewareType
 	logger.Debug("initial middlewareType")
 	middleware.Init(config.Conf, logger)
@@ -285,19 +288,6 @@ func (s *Server) RegisterRoutine(handlers ...Handler) *Server {
 // OnShutdown OnShutdown
 func (s *Server) OnShutdown(handlers ...Handler) *Server {
 	s.onShutdownHandlers = append(s.onShutdownHandlers, handlers...)
-	return s
-}
-
-func (s *Server) DBAutoMigrate(migrationSourceFS fs.FS) *Server {
-	if migrationSourceFS == nil {
-		panic("migration source fs is nil")
-	}
-
-	if err := doMigration(migrationSourceFS); err != nil {
-		panic(fmt.Sprintf("migration failed, %v", err))
-	}
-	logger.Info("database auto migrate success")
-
 	return s
 }
 
@@ -448,32 +438,23 @@ func ensureLogPath() string {
 	return filepath.Join(logDir, logFilename)
 }
 
-func doMigration(migrationSourceFS fs.FS) error {
-	// skip
+func doMigration() error {
 	if !config.Conf.App.DBMigration.AutoMigrate {
-		logger.Info("database auto migration skipped")
 		return nil
-	}
-	logger.Infof("starting database auto migration")
-
-	if migrationSourceFS == nil {
-		return fmt.Errorf("auto migration enabled but migration source fs is nil")
 	}
 
 	defaultMysql, exist := config.Conf.App.Middleware.Mysql["default"]
 	if !exist {
-		return fmt.Errorf("cannot find default mysql in config")
+		return fmt.Errorf("auto migration enabled but middleware.mysql.default is not configured")
 	}
 
 	if config.Conf.App.Name == "" {
-		return fmt.Errorf("app.name cannot be empty")
+		return fmt.Errorf("auto migration enabled but app.name is empty")
 	}
 
-	forceMigrate := true
-	if config.Conf.App.DBMigration.ForceMigrate != nil {
-		forceMigrate = *config.Conf.App.DBMigration.ForceMigrate
+	if defaultMysql.Dsn == "" {
+		return fmt.Errorf("auto migration enabled but middleware.mysql.default.dsn is empty")
 	}
 
-	return migration.Migrate(defaultMysql.Dsn, config.Conf.App.Name, config.Conf.App.DBMigration.Version,
-		migrationSourceFS, forceMigrate)
+	return migration.Run(defaultMysql.Dsn, config.Conf.App.Name)
 }
