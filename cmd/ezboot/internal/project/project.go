@@ -76,6 +76,16 @@ func CommandNew() *cobra.Command {
 				options.module += "/"
 			}
 
+			if !cmd.Flags().Changed("with-db") {
+				prompt := &survey.Confirm{
+					Message: "Do you need database support (schemas, dbgen and mysql) ?",
+				}
+
+				if err := survey.AskOne(prompt, &options.withDB); err != nil {
+					return nil
+				}
+			}
+
 			return createProject(ctx, projectName)
 		},
 	}
