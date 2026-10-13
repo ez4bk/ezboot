@@ -21,7 +21,19 @@ import (
 const (
 	DefaultRepo    = "https://github.com/ez4bk/ezboot-template"
 	DefaultTimeout = 180 * time.Second
+
+	// dbBlockBegin/dbBlockEnd 是模板中数据库条件块的标记。
+	// 标记行本身在生成时总会被移除, 块内内容仅在启用 --with-db 时保留。
+	dbBlockBegin = "ezboot:with-db:begin"
+	dbBlockEnd   = "ezboot:with-db:end"
 )
+
+// dbOnlyPaths 是仅在启用 --with-db 时才生成的模板路径(相对模板仓库根目录)
+var dbOnlyPaths = []string{
+	"dbgen/",
+	"schemas/",
+	"internal/dao/",
+}
 
 // CommandNew 创建一个新项目
 func CommandNew() *cobra.Command {
@@ -72,6 +84,7 @@ func CommandNew() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&options.module, "module", "", "the name of the golang project")
 	cmd.PersistentFlags().DurationVar(&options.timeout, "timeout", DefaultTimeout, "timeout for creates a project")
 	cmd.PersistentFlags().BoolVar(&options.withoutGit, "without-git", false, "without git-vcs init")
+	cmd.PersistentFlags().BoolVar(&options.withDB, "with-db", false, "generate database schemas, dbgen and mysql configuration")
 
 	return cmd
 }
@@ -82,6 +95,7 @@ var options struct {
 	module     string        // Go项目模板
 	timeout    time.Duration // 创建项目超时时间
 	withoutGit bool          // 是否要生成Git仓库
+	withDB     bool          // 是否要生成数据库相关的内容
 }
 
 // createProject 根据指定的参数创建并生成一个项目
@@ -129,7 +143,11 @@ func createProject(ctx context.Context, name string) (err error) {
 			return file.Error
 		}
 
-		err = renderAndWrite(filepath.Join(projectDir, file.RelPath), file.Content, buildParams(name))
+		if !options.withDB && isDBOnlyPath(file.RelPath) {
+			continue
+		}
+
+		err = renderAndWrite(filepath.Join(projectDir, file.RelPath), file.Content, buildParams(name), options.withDB)
 		if err != nil {
 			return err
 		}
@@ -146,7 +164,7 @@ func createProject(ctx context.Context, name string) (err error) {
 }
 
 // renderAndWrite 渲染并生成对应的项目目录结构
-func renderAndWrite(dst string, src io.ReadCloser, params map[string]string) error {
+func renderAndWrite(dst string, src io.ReadCloser, params map[string]string, withDB bool) error {
 	// do not forget close file
 	defer func() { _ = src.Close() }()
 
@@ -171,8 +189,47 @@ func renderAndWrite(dst string, src io.ReadCloser, params map[string]string) err
 		return err
 	}
 
-	_, err = fp.Write(render(data, params))
+	_, err = fp.Write(render(pruneDBBlocks(data, withDB), params))
 	return err
+}
+
+// pruneDBBlocks 移除模板中的数据库条件块标记
+// 标记行本身始终会被移除, 块内内容仅在 withDB 为 true 时保留
+func pruneDBBlocks(data []byte, withDB bool) []byte {
+	if !bytes.Contains(data, []byte(dbBlockBegin)) {
+		return data
+	}
+
+	lines := bytes.SplitAfter(data, []byte("\n"))
+	result := make([]byte, 0, len(data))
+	depth := 0
+	for _, line := range lines {
+		switch {
+		case bytes.Contains(line, []byte(dbBlockBegin)):
+			depth++
+		case bytes.Contains(line, []byte(dbBlockEnd)):
+			if depth > 0 {
+				depth--
+			}
+		default:
+			if depth == 0 || withDB {
+				result = append(result, line...)
+			}
+		}
+	}
+
+	return result
+}
+
+// isDBOnlyPath 判断模板文件是否仅在启用 --with-db 时才需要生成
+func isDBOnlyPath(relPath string) bool {
+	for _, prefix := range dbOnlyPaths {
+		if strings.HasPrefix(relPath, prefix) {
+			return true
+		}
+	}
+
+	return false
 }
 
 // isBinary 检查文件是否是二进制文件
