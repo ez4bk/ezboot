@@ -1,4 +1,5 @@
 FROM ghcr.io/ez4bk/devops/go-compiler AS builder
+#FROM crpi-r14rq0u598dowwcs.cn-hangzhou.personal.cr.aliyuncs.com/ez4bk/devops.go-compiler AS builder
 
 RUN go install github.com/bufbuild/buf/cmd/buf@latest && \
     go install github.com/favadi/protoc-go-inject-tag@latest && \

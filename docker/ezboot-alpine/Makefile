@@ -1,5 +1,6 @@
 override LATEST_TAG := 3
 override IMAGE_NAME := ghcr.io/ez4bk/devops/alpine
+#override IMAGE_NAME := crpi-r14rq0u598dowwcs.cn-hangzhou.personal.cr.aliyuncs.com/ez4bk/ezboot.alpine
 
 .DEFAULT_GOAL: all
 .PHONY: 3
