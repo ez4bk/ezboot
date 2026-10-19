@@ -21,21 +21,23 @@ const (
 )
 
 var (
-	idErrorNew       = &QualifiedIdentifier{Import: "errors", Identifier: "New"}
-	idContext        = &QualifiedIdentifier{Import: "context", Identifier: "Context"}
-	idXormSession    = &QualifiedIdentifier{Import: "xorm.io/xorm", Identifier: "Session"}
-	idEZBootLogger   = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot", Identifier: "Logger"}
-	idWithSession    = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/with", Identifier: "DefaultSession"}
-	idLogWarn        = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/elog", Identifier: "Warnw"}
-	idEXormPager     = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/exorm", Identifier: "Pager"}
-	idEXormNew       = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/exorm", Identifier: "New"}
-	idRedisClient    = &QualifiedIdentifier{Import: "github.com/go-redis/redis", Identifier: "Client"}
-	idJsonMarshal    = &QualifiedIdentifier{Import: "encoding/json", Identifier: "Marshal"}
-	idJsonUnmarshal  = &QualifiedIdentifier{Import: "encoding/json", Identifier: "Unmarshal"}
-	idTimeDuration   = &QualifiedIdentifier{Import: "time", Identifier: "Duration"}
-	idUtilsToString  = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/utils", Identifier: "ToString"}
-	namedContext     = jen.Id(vCtx).Qual(idContext.Import, idContext.Identifier)
-	namedXormSession = jen.Id(vDb).Op("*").Qual(idXormSession.Import, idXormSession.Identifier)
+	idErrorNew           = &QualifiedIdentifier{Import: "errors", Identifier: "New"}
+	idContext            = &QualifiedIdentifier{Import: "context", Identifier: "Context"}
+	idXormSession        = &QualifiedIdentifier{Import: "xorm.io/xorm", Identifier: "Session"}
+	idEZBootLogger       = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot", Identifier: "Logger"}
+	idWithSession        = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/with", Identifier: "DefaultSession"}
+	idLogWarn            = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/elog", Identifier: "Warnw"}
+	idEXormPager         = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/exorm", Identifier: "Pager"}
+	idEXormTokenPager    = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/exorm", Identifier: "TokenPager"}
+	idEXormNew           = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/exorm", Identifier: "New"}
+	idEXormNextPageToken = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/exorm", Identifier: "NextPageToken"}
+	idRedisClient        = &QualifiedIdentifier{Import: "github.com/go-redis/redis", Identifier: "Client"}
+	idJsonMarshal        = &QualifiedIdentifier{Import: "encoding/json", Identifier: "Marshal"}
+	idJsonUnmarshal      = &QualifiedIdentifier{Import: "encoding/json", Identifier: "Unmarshal"}
+	idTimeDuration       = &QualifiedIdentifier{Import: "time", Identifier: "Duration"}
+	idUtilsToString      = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/utils", Identifier: "ToString"}
+	namedContext         = jen.Id(vCtx).Qual(idContext.Import, idContext.Identifier)
+	namedXormSession     = jen.Id(vDb).Op("*").Qual(idXormSession.Import, idXormSession.Identifier)
 )
 
 // daoRender 数据访问层的代码生成器
@@ -52,6 +54,8 @@ type daoRender struct {
 	constructorNameMapper StringMapper
 
 	listerFields []*ListConstraint
+
+	pagerType PagerType
 
 	useCache     bool
 	cachePrefix  string
@@ -215,32 +219,47 @@ func (r *daoRender) ExistsMethod(g *jen.File, pTypename *jen.Statement) {
 // ListMethod 列出模型列表的方法
 func (r *daoRender) ListMethod(g *jen.File, pTypename *jen.Statement) {
 	typename := r.jenListParamsType(g)
+	token := r.pagerType == PagerTypeToken
 
 	sliceModelType := jen.Id("list").Index().Op("*").Add(r.modelIdentifier.AsCode())
 	outParams := jen.List(sliceModelType, jen.Id("total").Id("int64"), jen.Err().Error())
+	if token {
+		outParams = jen.List(sliceModelType, jen.Id("nextPageToken").Id("string"), jen.Err().Error())
+	}
 	inParams := jen.List(namedContext, jen.Id("params").Op("*").Id(typename))
 
 	g.Comment("List returns the specified models from database by params")
+	if token {
+		g.Comment("nextPageToken is empty when there is no more data")
+	}
 	g.Func().Params(pTypename).Id("List").Params(inParams).Params(outParams).BlockFunc(func(gp *jen.Group) {
 		r.jenWithDefaultSession(gp, func(gp *jen.Group) {
-			stmt := gp.Id("total").Op(",").Err().Op("=").Add(idEXormNew.AsCode()).
-				Call(jen.Id("db")).Op(".").Line()
+			var head *jen.Statement
+			if token {
+				head = gp.Id("err").Op("=").Add(idEXormNew.AsCode()).Call(jen.Id("db"))
+			} else {
+				head = gp.Id("total").Op(",").Err().Op("=").Add(idEXormNew.AsCode()).Call(jen.Id("db"))
+			}
 
 			for _, constraint := range r.listerFields {
 				mf := r.modelFields[constraint.fieldName]
 				if constraint.optional || constraint.nullable {
 					field := jen.Id("params").Dot(mf.FieldName)
 					if constraint.nullable {
-						stmt.Id("Nullable").Call(constraint.jenConditions(field, mf)...).Op(".").Line()
+						head.Op(".").Line().Id("Nullable").Call(constraint.jenConditions(field, mf)...)
 					} else {
-						stmt.Id("Cond").Call(constraint.jenConditions(field, mf)...).Op(".").Line()
+						head.Op(".").Line().Id("Cond").Call(constraint.jenConditions(field, mf)...)
 					}
 				}
 			}
 
-			stmt.
-				Id("Limit").Call(jen.Id("params")).Op(".").Line().
-				Id("Raw").Call().Op(".").Line()
+			if token {
+				head.Op(".").Line().Id("LimitToken").Call(jen.Id("params"), jen.Lit(r.pkName()))
+			} else {
+				head.Op(".").Line().Id("Limit").Call(jen.Id("params"))
+			}
+
+			query := head.Op(".").Line().Id("Raw").Call()
 
 			var hasDeleted bool
 			for _, constraint := range r.listerFields {
@@ -249,21 +268,37 @@ func (r *daoRender) ListMethod(g *jen.File, pTypename *jen.Statement) {
 				mf := r.modelFields[constraint.fieldName]
 				if !constraint.optional && !constraint.nullable {
 					field := jen.Id("params").Dot(mf.FieldName)
-					stmt.Id("Where").Call(constraint.jenConditions(field, mf)[1:]...).Op(".").Line()
+					query.Op(".").Line().Id("Where").Call(constraint.jenConditions(field, mf)[1:]...)
 				}
 			}
 
 			if !hasDeleted {
-				stmt.
-					Id("Where").Call(jen.Lit("deleted = ?"), jen.Lit(false)).Op(".").Line()
+				query.Op(".").Line().Id("Where").Call(jen.Lit("deleted = ?"), jen.Lit(false))
 			}
 
-			stmt.
-				Id("OrderBy").Call(jen.Lit(fmt.Sprintf("%s desc", r.pkName()))).Op(".").Line().
-				Id("FindAndCount").Call(jen.Op("&").Id("list"))
+			query.Op(".").Line().Id("OrderBy").Call(jen.Lit(fmt.Sprintf("%s desc", r.pkName())))
+			if token {
+				query.Op(".").Line().Id("Find").Call(jen.Op("&").Id("list"))
+			} else {
+				query.Op(".").Line().Id("FindAndCount").Call(jen.Op("&").Id("list"))
+			}
 			r.jenIfErrNotNil(gp, func(gp *jen.Group) {
 				r.jenReturnErrWrap(gp, "failed to list %s from database", r.table.Name)
 			})
+
+			if token {
+				pkField := r.modelFields[r.pkName()].FieldName
+				gp.Line()
+				gp.If(jen.Len(jen.Id("list")).Op(">").Lit(0)).Block(
+					jen.Id("nextPageToken").Op("=").Add(idEXormNextPageToken.AsCode()).Call(
+						jen.Id("int64").Call(
+							jen.Id("list").Index(jen.Len(jen.Id("list")).Op("-").Lit(1)).Dot(pkField),
+						),
+						jen.Len(jen.Id("list")),
+						jen.Id("params").Dot("GetPageSize").Call(),
+					),
+				)
+			}
 
 			gp.Line()
 			gp.Return(jen.Nil())
@@ -280,14 +315,21 @@ func (r *daoRender) ListMethod(g *jen.File, pTypename *jen.Statement) {
 func (r *daoRender) jenListParamsType(g *jen.File) string {
 	typename := fmt.Sprintf("List%sParams", r.modelIdentifier.Identifier)
 
+	pagerIdentifier := idEXormPager
+	if r.pagerType == PagerTypeToken {
+		pagerIdentifier = idEXormTokenPager
+	}
+
 	g.Commentf("%s represents the params to list models", typename)
 	g.Type().Id(typename).StructFunc(func(gp *jen.Group) {
-		gp.Add(idEXormPager.AsCode())
+		gp.Add(pagerIdentifier.AsCode())
 
 		gp.Line()
 		for _, constraint := range r.listerFields {
 			var attributes []string
-			if constraint.optional {
+			if constraint.nullable {
+				attributes = append(attributes, "nullable")
+			} else if constraint.optional {
 				attributes = append(attributes, "optional")
 			} else {
 				attributes = append(attributes, "required")
@@ -473,7 +515,7 @@ func (r *daoRender) jenVarModel(gp *jen.Group) *jen.Statement {
 func (r *daoRender) jenModelIdCreateKey(member bool) *jen.Statement {
 	arg := jen.Id("id")
 	if member {
-		arg = jen.Id("model").Dot("Id")
+		arg = jen.Id("model").Dot(r.modelFields[r.pkName()].FieldName)
 	}
 	return jen.Lit(r.cachePrefix).Op("+").Qual(idUtilsToString.Import, idUtilsToString.Identifier).Call(arg)
 }
@@ -581,6 +623,8 @@ func newDAORender(r *render, options ...DAORenderOption) (*daoRender, error) {
 
 		structNameMapper:      DefaultDAOStructNameMapper(),
 		constructorNameMapper: DefaultDAOConstructorNameMapper(),
+
+		pagerType: PagerTypeIndex,
 	}
 
 	for _, option := range options {
@@ -640,6 +684,21 @@ func WithDAOCache(Prefix string, Expired time.Duration) DAORenderOption {
 		dr.useCache = true
 		dr.cachePrefix = Prefix
 		dr.cacheExpired = Expired
+		return nil
+	}
+}
+
+// WithDAOPagerType 指定列表函数使用的分页方式
+func WithDAOPagerType(t PagerType) DAORenderOption {
+	return func(dr *daoRender) error {
+		switch t {
+		case "", PagerTypeIndex:
+			dr.pagerType = PagerTypeIndex
+		case PagerTypeToken:
+			dr.pagerType = PagerTypeToken
+		default:
+			return fmt.Errorf("dao: unknown pager type %q", t)
+		}
 		return nil
 	}
 }
@@ -722,11 +781,6 @@ func WithDAOListerConstraintLikely(field string, optional bool) DAORenderOption 
 	return WithDAOListerConstraint(field, WithConstraintOptional(optional), WithConstraintLikely())
 }
 
-// WithDAOListConstraintRequire 必选字段
-func WithDAOListConstraintRequire(field string) DAORenderOption {
-	return WithDAOListerConstraint(field, WithConstraintRequired())
-}
-
 // WithDAOListConstraintEnum 枚举值特判
 func WithDAOListConstraintEnum(field string, skip string, optional bool) DAORenderOption {
 	return WithDAOListerConstraint(field, WithConstraintAsEnumValue(skip), WithConstraintOptional(optional))
@@ -739,13 +793,6 @@ type ConstraintOption func(c *ListConstraint)
 func WithConstraintOptional(optional ...bool) ConstraintOption {
 	return func(c *ListConstraint) {
 		c.optional = len(optional) == 0 || optional[0]
-	}
-}
-
-// WithConstraintRequired 表示约束是必选的
-func WithConstraintRequired(required ...bool) ConstraintOption {
-	return func(c *ListConstraint) {
-		c.optional = !(len(required) == 0 || required[0])
 	}
 }
 

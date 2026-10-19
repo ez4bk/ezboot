@@ -1,33 +1,19 @@
 package exorm
 
-// Pager 表示一个可执行分页的参数请求
+// Pager 表示 page_size + page_index 风格的分页参数
 type Pager interface {
 	// GetPageSize 分页大小, 需要大于 0
 	GetPageSize() int64
 
-	// GetPageIndex 分页页码, 索引从 0 开始
+	// GetPageIndex 分页页码
+	// 索引从 1 开始, <= 1 均视为第一页
 	GetPageIndex() int64
 }
 
-// Limit 为查询配置分页
+// Limit 为查询配置 page_size + page_index 分页
 func (s *Session) Limit(p Pager) *Session {
-	if p != nil {
+	if p != nil && p.GetPageSize() > 0 {
 		s.db.Limit(int(p.GetPageSize()), int((p.GetPageIndex()-1)*p.GetPageSize()))
 	}
 	return s
-}
-
-type fixedPager struct {
-	n int64
-}
-
-func (f fixedPager) GetPageSize() int64  { return f.n }
-func (f fixedPager) GetPageIndex() int64 { return 1 }
-
-// FixedPager 固定的分页大小
-func FixedPager(n ...int64) Pager {
-	if len(n) == 0 {
-		return fixedPager{n: 1000}
-	}
-	return fixedPager{n: n[0]}
 }

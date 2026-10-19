@@ -78,6 +78,10 @@ func (r *Reflection) mergeRenderOptions(table string, options []RenderOption) []
 				merged = append(merged, WithDAORenderOptions(WithDAOCache(policy.CachePolicy.Prefix, policy.CachePolicy.Expired)))
 			}
 
+			if policy.PagerPolicy != nil {
+				merged = append(merged, WithDAORenderOptions(WithDAOPagerType(policy.PagerPolicy.Type)))
+			}
+
 			for name, column := range policy.Columns {
 				if len(column.Alias) != 0 {
 					copyName := name
@@ -110,14 +114,13 @@ func (r *Reflection) mergeDAORenderOptions(policy *DAOPolicy) []DAORenderOption 
 		constraint := policy.Constraint[field]
 
 		if constraint.Likely {
-			options = append(options, WithDAOListerConstraintLikely(field, !constraint.Required))
+			options = append(options, WithDAOListerConstraintLikely(field, true))
 		} else {
 			options = append(options, WithDAOListerConstraint(field,
-				WithConstraintRequired(constraint.Required),
-				WithConstraintOptional(constraint.OptionalSkip != nil),
-				WithConstraintAsEnumValue(constraint.OptionalEnum),
+				WithConstraintOptional(constraint.OptionalSkip != nil || constraint.OptionalEnum != ""),
 				WithConstraintNullable(constraint.Nullable),
 				WithConstraintSkipCond(constraint.OptionalSkip),
+				WithConstraintAsEnumValue(constraint.OptionalEnum),
 			))
 		}
 	}
@@ -145,6 +148,9 @@ func (r *Reflection) Visit(visit func(table string) error) error {
 
 // Close 清理反射工具的资源
 func (r *Reflection) Close() error {
+	if r.engine == nil {
+		return nil
+	}
 	return r.engine.Close()
 }
 
@@ -207,6 +213,18 @@ func NewWithEngine(engine *xorm.Engine, options ...Option) (*Reflection, error) 
 		}
 	}
 
+	return r, nil
+}
+
+// NewWithTables 直接使用传入的表结构创建反射对象
+// 主要用于离线预览和测试, 不会连接数据库
+func NewWithTables(tables map[string]*schemas.Table, options ...Option) (*Reflection, error) {
+	r := &Reflection{tables: tables}
+	for _, option := range options {
+		if err := option(r); err != nil {
+			return nil, err
+		}
+	}
 	return r, nil
 }
 
