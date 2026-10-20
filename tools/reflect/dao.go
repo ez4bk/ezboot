@@ -21,23 +21,24 @@ const (
 )
 
 var (
-	idErrorNew           = &QualifiedIdentifier{Import: "errors", Identifier: "New"}
-	idContext            = &QualifiedIdentifier{Import: "context", Identifier: "Context"}
-	idXormSession        = &QualifiedIdentifier{Import: "xorm.io/xorm", Identifier: "Session"}
-	idEZBootLogger       = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot", Identifier: "Logger"}
-	idWithSession        = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/with", Identifier: "DefaultSession"}
-	idLogWarn            = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/elog", Identifier: "Warnw"}
-	idEXormPager         = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/exorm", Identifier: "Pager"}
-	idEXormTokenPager    = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/exorm", Identifier: "TokenPager"}
-	idEXormNew           = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/exorm", Identifier: "New"}
-	idEXormNextPageToken = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/exorm", Identifier: "NextPageToken"}
-	idRedisClient        = &QualifiedIdentifier{Import: "github.com/go-redis/redis", Identifier: "Client"}
-	idJsonMarshal        = &QualifiedIdentifier{Import: "encoding/json", Identifier: "Marshal"}
-	idJsonUnmarshal      = &QualifiedIdentifier{Import: "encoding/json", Identifier: "Unmarshal"}
-	idTimeDuration       = &QualifiedIdentifier{Import: "time", Identifier: "Duration"}
-	idUtilsToString      = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/utils", Identifier: "ToString"}
-	namedContext         = jen.Id(vCtx).Qual(idContext.Import, idContext.Identifier)
-	namedXormSession     = jen.Id(vDb).Op("*").Qual(idXormSession.Import, idXormSession.Identifier)
+	idErrorNew             = &QualifiedIdentifier{Import: "errors", Identifier: "New"}
+	idContext              = &QualifiedIdentifier{Import: "context", Identifier: "Context"}
+	idXormSession          = &QualifiedIdentifier{Import: "xorm.io/xorm", Identifier: "Session"}
+	idEZBootLogger         = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot", Identifier: "Logger"}
+	idWithSession          = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/with", Identifier: "DefaultSession"}
+	idLogWarn              = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/elog", Identifier: "Warnw"}
+	idEXormPager           = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/exorm", Identifier: "Pager"}
+	idEXormTokenPager      = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/exorm", Identifier: "TokenPager"}
+	idEXormNew             = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/exorm", Identifier: "New"}
+	idEXormNewDefaultToken = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/exorm", Identifier: "NewDefaultToken"}
+	idEXormNextPageToken   = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/exorm", Identifier: "NextPageToken"}
+	idRedisClient          = &QualifiedIdentifier{Import: "github.com/go-redis/redis", Identifier: "Client"}
+	idJsonMarshal          = &QualifiedIdentifier{Import: "encoding/json", Identifier: "Marshal"}
+	idJsonUnmarshal        = &QualifiedIdentifier{Import: "encoding/json", Identifier: "Unmarshal"}
+	idTimeDuration         = &QualifiedIdentifier{Import: "time", Identifier: "Duration"}
+	idUtilsToString        = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/utils", Identifier: "ToString"}
+	namedContext           = jen.Id(vCtx).Qual(idContext.Import, idContext.Identifier)
+	namedXormSession       = jen.Id(vDb).Op("*").Qual(idXormSession.Import, idXormSession.Identifier)
 )
 
 // daoRender 数据访问层的代码生成器
@@ -236,7 +237,7 @@ func (r *daoRender) ListMethod(g *jen.File, pTypename *jen.Statement) {
 		r.jenWithDefaultSession(gp, func(gp *jen.Group) {
 			var head *jen.Statement
 			if token {
-				head = gp.Id("err").Op("=").Add(idEXormNew.AsCode()).Call(jen.Id("db"))
+				head = gp.Id("query").Op(",").Id("err").Op(":=").Add(idEXormNew.AsCode()).Call(jen.Id("db"))
 			} else {
 				head = gp.Id("total").Op(",").Err().Op("=").Add(idEXormNew.AsCode()).Call(jen.Id("db"))
 			}
@@ -253,13 +254,17 @@ func (r *daoRender) ListMethod(g *jen.File, pTypename *jen.Statement) {
 				}
 			}
 
+			var query *jen.Statement
 			if token {
-				head.Op(".").Line().Id("LimitToken").Call(jen.Id("params"), jen.Lit(r.pkName()))
+				head.Op(".").Line().Id("DefaultTokenLimit").Call(jen.Id("params"), jen.Lit(r.pkName()))
+				gp.Line()
+				gp.If(jen.Err().Op("!=").Nil()).Block(jen.Return(jen.Err()))
+				gp.Line()
+				query = gp.Id("err").Op("=").Id("query").Dot("Raw").Call()
 			} else {
 				head.Op(".").Line().Id("Limit").Call(jen.Id("params"))
+				query = head.Op(".").Line().Id("Raw").Call()
 			}
-
-			query := head.Op(".").Line().Id("Raw").Call()
 
 			var hasDeleted bool
 			for _, constraint := range r.listerFields {
@@ -288,11 +293,13 @@ func (r *daoRender) ListMethod(g *jen.File, pTypename *jen.Statement) {
 
 			if token {
 				pkField := r.modelFields[r.pkName()].FieldName
+				lastPK := jen.Id("list").Index(jen.Len(jen.Id("list")).Op("-").Lit(1)).Dot(pkField)
 				gp.Line()
 				gp.If(jen.Len(jen.Id("list")).Op(">").Lit(0)).Block(
 					jen.Id("nextPageToken").Op("=").Add(idEXormNextPageToken.AsCode()).Call(
-						jen.Id("int64").Call(
-							jen.Id("list").Index(jen.Len(jen.Id("list")).Op("-").Lit(1)).Dot(pkField),
+						jen.Qual(idEXormNewDefaultToken.Import, idEXormNewDefaultToken.Identifier).Call(
+							jen.Lit(r.pkName()),
+							lastPK,
 						),
 						jen.Len(jen.Id("list")),
 						jen.Id("params").Dot("GetPageSize").Call(),
