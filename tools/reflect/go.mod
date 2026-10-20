@@ -6,7 +6,7 @@ retract v0.2.0
 
 require (
 	github.com/dave/jennifer v1.7.1
-	github.com/ez4bk/ezboot v0.3.0
+	github.com/ez4bk/ezboot v0.4.0
 	github.com/go-sql-driver/mysql v1.10.1
 	github.com/iancoleman/strcase v0.3.0
 	github.com/pkg/errors v0.9.1
