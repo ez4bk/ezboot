@@ -3,11 +3,13 @@ package reflect
 import (
 	"fmt"
 	"io"
+	"reflect"
 	"strings"
 
 	"github.com/dave/jennifer/jen"
 	"github.com/iancoleman/strcase"
 	"github.com/pkg/errors"
+	"xorm.io/xorm/convert"
 	"xorm.io/xorm/schemas"
 )
 
@@ -312,6 +314,19 @@ func YamlTagMapper() TagMapper {
 	}
 }
 
+// isConversionType 判断字段的 Go 类型是否实现了 xorm 的 convert.Conversion 接口
+func isConversionType(field *Field) bool {
+	if field == nil || field.Type == nil || field.Type.Value == nil {
+		return false
+	}
+	t := reflect.TypeOf(field.Type.Value)
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	_, ok := reflect.New(t).Interface().(convert.Conversion)
+	return ok
+}
+
 // XORMTagMapper 是一个必备生成器
 func XORMTagMapper() TagMapper {
 	return &FixedNameTagMapper{
@@ -322,11 +337,17 @@ func XORMTagMapper() TagMapper {
 			var attributes []string
 			attributes = append(attributes, fmt.Sprintf(`'%s'`, column.Name))
 
-			typename := strings.ToLower(column.SQLType.Name)
-			if column.SQLType.DefaultLength != 0 {
-				typename += fmt.Sprintf("(%d)", column.SQLType.DefaultLength)
+			// 实现了 xorm convert.Conversion 的类型由 ToDB/FromDB 负责读写，
+			// tag 里的 SQL 类型名没有意义。而且 xorm 只认识 schemas.SqlTypes 白名单里的
+			// 类型名，白名单外的名字（如 point）会被当成"列名"覆盖掉真正的列名，
+			// 导致查询出现 Unknown column 'point'。这类列只保留列名和约束。
+			if !isConversionType(field) {
+				typename := strings.ToLower(column.SQLType.Name)
+				if column.SQLType.DefaultLength != 0 {
+					typename += fmt.Sprintf("(%d)", column.SQLType.DefaultLength)
+				}
+				attributes = append(attributes, typename)
 			}
-			attributes = append(attributes, typename)
 
 			if column.IsPrimaryKey {
 				attributes = append(attributes, "pk")
