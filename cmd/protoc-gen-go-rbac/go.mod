@@ -3,7 +3,7 @@ module github.com/ez4bk/ezboot/cmd/protoc-gen-go-rbac
 go 1.27
 
 require (
-	github.com/ez4bk/ezboot v0.3.0
+	github.com/ez4bk/ezboot v0.4.0
 	google.golang.org/genproto/googleapis/api v0.0.0-20261005182115-fad411399dd8
 	google.golang.org/protobuf v1.36.12
 )

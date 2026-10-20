@@ -4,8 +4,8 @@ go 1.27
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
-	github.com/ez4bk/ezboot v0.3.0
-	github.com/ez4bk/ezboot/tools/reflect v0.3.0
+	github.com/ez4bk/ezboot v0.4.0
+	github.com/ez4bk/ezboot/tools/reflect v0.4.0
 	github.com/fatih/color v1.19.0
 	github.com/go-git/go-git/v5 v5.19.3
 	github.com/go-sql-driver/mysql v1.10.1
