@@ -8,50 +8,43 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.10.0"
-	"google.golang.org/grpc"
 
+	"github.com/ez4bk/ezboot/internal/gin-boot/config"
 	"github.com/ez4bk/ezboot/internal/gin-boot/env"
-	"github.com/ez4bk/ezboot/internal/gin-boot/middleware/tracing/otelxgrpc"
 )
 
-func (mw *Middleware) initOTEL() {
-	if mw.conf.App.Middleware.Tracing.Startup {
-		je, err := jaeger.New(
-			jaeger.WithCollectorEndpoint(
-				jaeger.WithEndpoint(mw.conf.App.Middleware.Tracing.Jaeger.Endpoint),
-			),
-		)
-
-		if err != nil {
-			panic(err)
-		}
-
-		mw.tracerProvider = tracesdk.NewTracerProvider(
-			tracesdk.WithBatcher(je),
-			tracesdk.WithResource(resource.NewWithAttributes(
-				semconv.SchemaURL,
-				semconv.ServiceNameKey.String(mw.conf.App.Name),
-				attribute.String("environment", env.ModeName(env.Env.Mode)),
-			)),
-		)
-
-		otel.SetTracerProvider(mw.tracerProvider)
-		otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
-			propagation.TraceContext{}, propagation.Baggage{},
-		))
-
-		var unaryInterceptors []grpc.UnaryServerInterceptor
-		if mw.conf.App.Middleware.Tracing.Details.Enabled {
-			unaryInterceptors = append(unaryInterceptors,
-				otelxgrpc.UnaryLogger(),
-				otelxgrpc.UnaryDumper(
-					mw.conf.App.Middleware.Tracing.Details.Request,
-					mw.conf.App.Middleware.Tracing.Details.Response,
-				),
-			)
-		}
-
-		AddGrpcUnaryInterceptorsFirst(unaryInterceptors...)
-		AddGrpcStreamInterceptorsFirst()
+// InitOTEL configures the global OpenTelemetry tracer provider and propagator,
+// then registers the gRPC tracing interceptors. It returns nil when tracing
+// is disabled.
+func InitOTEL(cfg *config.Config) (*tracesdk.TracerProvider, error) {
+	if cfg == nil || !cfg.App.Middleware.Tracing.Startup {
+		return nil, nil
 	}
+
+	je, err := jaeger.New(
+		jaeger.WithCollectorEndpoint(
+			jaeger.WithEndpoint(cfg.App.Middleware.Tracing.Jaeger.Endpoint),
+		),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	tp := tracesdk.NewTracerProvider(
+		tracesdk.WithBatcher(je),
+		tracesdk.WithResource(resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceNameKey.String(cfg.App.Name),
+			attribute.String("environment", env.ModeName(env.Env.Mode)),
+		)),
+	)
+
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{}, propagation.Baggage{},
+	))
+
+	RegisterTracingInterceptors(cfg)
+
+	return tp, nil
 }

@@ -1,11 +1,10 @@
-package middleware
+package infra
 
 import (
 	"bytes"
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -21,17 +20,21 @@ import (
 	"github.com/ez4bk/ezboot/internal/logging"
 )
 
-func cleanData(data interface{}) interface{} {
+func cleanData(data any) any {
 	typ := reflect.ValueOf(data).Elem().Type()
 	return reflect.New(typ).Interface()
 }
 
 // RegisterRemoteConfigDefault : Use default etcd
-func (mw *Middleware) RegisterRemoteConfigDefault(ctx context.Context, mut *sync.Mutex, forceFrist bool, path string, data interface{}, f func(interface{})) error {
-	return mw.RegisterRemoteConfig(ctx, mw.DefaultEtcd(), forceFrist, mut, path, data, f)
+func (s *Set) RegisterRemoteConfigDefault(ctx context.Context, mut *sync.Mutex, forceFirst bool, path string, data any, f func(any)) error {
+	client, err := s.Etcd()
+	if err != nil {
+		return err
+	}
+	return s.RegisterRemoteConfig(ctx, client, forceFirst, mut, path, data, f)
 }
 
-func writeData(mut *sync.Mutex, path string, value []byte, data interface{}, f func(interface{})) error {
+func writeData(mut *sync.Mutex, path string, value []byte, data any, f func(any)) error {
 	data = cleanData(data)
 
 	logger := logging.Default()
@@ -48,7 +51,7 @@ func writeData(mut *sync.Mutex, path string, value []byte, data interface{}, f f
 		if f != nil {
 			f(data)
 		}
-		er := ioutil.WriteFile(filepath.Join(config.ConfigDir, path), value, os.ModePerm)
+		er := os.WriteFile(filepath.Join(config.ConfigDir, path), value, os.ModePerm)
 		if er != nil {
 			logger.Warnf("err in read remote config %v, %v", path, er)
 		}
@@ -56,17 +59,17 @@ func writeData(mut *sync.Mutex, path string, value []byte, data interface{}, f f
 	return err
 }
 
-// RegisterRemoteConfigV2 RegisterRemoteConfig
+// RegisterRemoteConfig
 // f will be called when config change, it's your duty to make sure data used in f should be synced
 // f may be called multiple times
-func (mw *Middleware) RegisterRemoteConfig(ctx context.Context, client *clientv3.Client, forceFirst bool, mut *sync.Mutex, path string, data interface{}, f func(interface{})) error {
+func (s *Set) RegisterRemoteConfig(ctx context.Context, client *clientv3.Client, forceFirst bool, mut *sync.Mutex, path string, data any, f func(any)) error {
 	if client == nil {
 		panic("client should not be nil")
 	}
 	logger := logging.Default()
 
 	// read local file first
-	previous, err := ioutil.ReadFile(filepath.Join(config.ConfigDir, path))
+	previous, err := os.ReadFile(filepath.Join(config.ConfigDir, path))
 	if err == nil {
 		d := yaml.NewDecoder(bytes.NewReader(previous))
 		if env.Env.LogLevel < env.LevelWarn {
@@ -113,7 +116,7 @@ func (mw *Middleware) RegisterRemoteConfig(ctx context.Context, client *clientv3
 
 		rev := val.Header.Revision
 
-		if mw.etcd.polling {
+		if s.EtcdPolling() {
 			for {
 				select {
 				case <-time.After(time.Second * 20):

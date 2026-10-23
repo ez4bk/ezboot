@@ -1,34 +1,33 @@
-package middleware
+package infra
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
-	conf_type "github.com/ez4bk/ezboot/internal/gin-boot/conf_type"
-	"github.com/ez4bk/ezboot/internal/logging"
 	amqp "github.com/rabbitmq/amqp091-go"
+
+	conftype "github.com/ez4bk/ezboot/internal/gin-boot/conf_type"
+	"github.com/ez4bk/ezboot/internal/gin-boot/config"
+	"github.com/ez4bk/ezboot/internal/logging"
 )
 
 type RabbitMQClient struct {
-	Config     *conf_type.RabbitMQ
+	Config     *conftype.RabbitMQ
 	Publishers map[string]*RabbitMQPublisher
 	Consumers  map[string]*RabbitMQConsumer
 }
 
-func (r *RabbitMQClient) Shutdown() {
-	for _, publisher := range r.Publishers {
-		_ = publisher.Close()
-	}
-	for _, consumer := range r.Consumers {
-		_ = consumer.Close()
-	}
+type rabbitMQ struct {
+	mu     sync.Mutex
+	client *RabbitMQClient
 }
 
-func (mw *Middleware) initRabbitMQ() {
-	conf := &mw.conf.App.Middleware.RabbitMQ
+func (r *rabbitMQ) open(cfg *config.Config, logger *logging.Logger) error {
+	conf := &cfg.App.Middleware.RabbitMQ
 	if !conf.Startup {
-		return
+		return nil
 	}
 
 	client := &RabbitMQClient{
@@ -36,16 +35,69 @@ func (mw *Middleware) initRabbitMQ() {
 		Publishers: make(map[string]*RabbitMQPublisher),
 		Consumers:  make(map[string]*RabbitMQConsumer),
 	}
-
 	for _, publisher := range conf.Publishers {
-		client.Publishers[publisher.Name] = NewRabbitMQPublisher(mw.logger, conf.Url, publisher.Exchange)
+		client.Publishers[publisher.Name] = NewRabbitMQPublisher(logger, conf.Url, publisher.Exchange)
 	}
-
 	for _, consumer := range conf.Consumers {
-		client.Consumers[consumer.Name] = NewRabbitMQConsumer(mw.logger, conf.Url, consumer.Exchange, consumer.Queue)
+		client.Consumers[consumer.Name] = NewRabbitMQConsumer(logger, conf.Url, consumer.Exchange, consumer.Queue)
 	}
 
-	mw.rabbitMQ = client
+	r.mu.Lock()
+	r.client = client
+	r.mu.Unlock()
+	return nil
+}
+
+func (r *rabbitMQ) get() (*RabbitMQClient, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.client == nil {
+		return nil, resourceError("rabbitmq", defaultName, nil)
+	}
+	return r.client, nil
+}
+
+func (r *rabbitMQ) close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.client == nil {
+		return nil
+	}
+	err := r.client.Shutdown()
+	r.client = nil
+	return err
+}
+
+// RabbitMQ returns the configured RabbitMQ client.
+func (s *Set) RabbitMQ() (*RabbitMQClient, error) {
+	if s == nil {
+		return nil, resourceError("rabbitmq", defaultName, nil)
+	}
+	return s.rabbitMQ.get()
+}
+
+// Shutdown closes every publisher and consumer. It is safe to call on a nil
+// client and ignores "already closed" errors so shutdown is idempotent.
+func (r *RabbitMQClient) Shutdown() error {
+	if r == nil {
+		return nil
+	}
+
+	var errs []error
+	for name, publisher := range r.Publishers {
+		if err := publisher.Close(); err != nil && !errors.Is(err, errAlreadyClosed) {
+			errs = append(errs, fmt.Errorf("close rabbitmq publisher %q: %w", name, err))
+		}
+	}
+	for name, consumer := range r.Consumers {
+		if err := consumer.Close(); err != nil && !errors.Is(err, errAlreadyClosed) {
+			errs = append(errs, fmt.Errorf("close rabbitmq consumer %q: %w", name, err))
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 const (
@@ -75,6 +127,7 @@ type RabbitMQBase struct {
 	notifyConnClose chan *amqp.Error
 	notifyChanClose chan *amqp.Error
 	isReady         bool
+	closed          bool
 
 	initializer channelInitializer
 }
@@ -209,32 +262,41 @@ func (b *RabbitMQBase) GetChannel() *amqp.Channel {
 	return b.channel
 }
 
-// Close will cleanly shut down the channel and connection.
+// Close will cleanly shut down the channel and connection. It also stops the
+// reconnect loop even when the initial connection attempt never succeeded.
 func (b *RabbitMQBase) Close() error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if !b.isReady {
-		return errAlreadyClosed
+	if b.closed {
+		return nil
 	}
-	close(b.done)
-	if err := b.channel.Close(); err != nil {
-		return err
-	}
-	if err := b.connection.Close(); err != nil {
-		return err
-	}
+	b.closed = true
 	b.isReady = false
-	return nil
+	close(b.done)
+
+	var errs []error
+	if b.channel != nil {
+		if err := b.channel.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if b.connection != nil {
+		if err := b.connection.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 type RabbitMQPublisher struct {
 	RabbitMQBase
-	exchange      *conf_type.Exchange
+	exchange      *conftype.Exchange
 	notifyConfirm chan amqp.Confirmation
 }
 
-func NewRabbitMQPublisher(l *logging.Logger, url string, exchange *conf_type.Exchange) *RabbitMQPublisher {
+func NewRabbitMQPublisher(l *logging.Logger, url string, exchange *conftype.Exchange) *RabbitMQPublisher {
 	p := &RabbitMQPublisher{exchange: exchange}
 	p.RabbitMQBase = newRabbitMQBase(l, url, p)
 	p.Start()
@@ -319,11 +381,11 @@ func (p *RabbitMQPublisher) UnsafePush(routingKey string, data []byte) error {
 
 type RabbitMQConsumer struct {
 	RabbitMQBase
-	exchange *conf_type.Exchange
-	queue    *conf_type.Queue
+	exchange *conftype.Exchange
+	queue    *conftype.Queue
 }
 
-func NewRabbitMQConsumer(l *logging.Logger, url string, exchange *conf_type.Exchange, queue *conf_type.Queue) *RabbitMQConsumer {
+func NewRabbitMQConsumer(l *logging.Logger, url string, exchange *conftype.Exchange, queue *conftype.Queue) *RabbitMQConsumer {
 	c := &RabbitMQConsumer{queue: queue, exchange: exchange}
 	c.RabbitMQBase = newRabbitMQBase(l, url, c)
 	c.Start()

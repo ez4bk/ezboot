@@ -31,8 +31,9 @@ import (
 	"github.com/ez4bk/ezboot/internal/gin-boot/config"
 	"github.com/ez4bk/ezboot/internal/gin-boot/env"
 	"github.com/ez4bk/ezboot/internal/gin-boot/file"
-	grpc_boot "github.com/ez4bk/ezboot/internal/gin-boot/grpc_boot"
+	"github.com/ez4bk/ezboot/internal/gin-boot/grpc_boot"
 	_http "github.com/ez4bk/ezboot/internal/gin-boot/http"
+	"github.com/ez4bk/ezboot/internal/gin-boot/infra"
 	"github.com/ez4bk/ezboot/internal/gin-boot/internal/cmd"
 	"github.com/ez4bk/ezboot/internal/gin-boot/middleware"
 	"github.com/ez4bk/ezboot/internal/gin-boot/middleware/tracing/otelgin"
@@ -210,9 +211,19 @@ func Default() *Server {
 		util.ChkErr(err)
 	}
 
-	// init middlewareType
-	logger.Debug("initial middlewareType")
-	middleware.Init(config.Conf, logger)
+	// init infrastructure
+	logger.Debug("initializing infrastructure")
+	infras, err := infra.Open(config.Conf, logger)
+	util.ChkErr(err)
+	infra.SetDefault(infras)
+	Infra = infras
+
+	tracerProvider, err := middleware.InitOTEL(config.Conf)
+	if err != nil {
+		_ = infras.Close(context.Background())
+		util.ChkErr(err)
+	}
+	infras.SetTracerProvider(tracerProvider)
 
 	// initGRPCClient
 	initGRPCClient()
@@ -245,7 +256,11 @@ func Default() *Server {
 	)
 
 	server.OnShutdown(func(server *_http.Driver) {
-		util.ChkErr(middleware.Shutdown())
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := infra.ShutdownContext(ctx); err != nil {
+			logger.Warnw("failed to close infrastructure", "error", err)
+		}
 	})
 	return server
 }
@@ -335,19 +350,18 @@ func (s *Server) Run() {
 
 	sigQuit := <-shutdown
 
-	logger.Infof("http server gracefully shutdown by signal %v", sigQuit.String())
+	logger.Infof("shutting down by signal %v", sigQuit.String())
 
-	// wait for routines finishing
-	for _, h := range s.onShutdownHandlers {
-		go h(s.Driver)
-	}
-	util.WaitTimeout(s.waitGroup, 2*time.Second)
-
+	// Stop accepting new HTTP requests and drain in-flight handlers first.
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	wg := &sync.WaitGroup{}
+	if err := server.Shutdown(ctx); err != nil {
+		logger.Warnw("http server shutdown did not finish cleanly", "error", err)
+	}
 
+	// Then drain gRPC so gateway requests that are still in flight can finish.
 	logger.Infof("gRPC server %s gracefully shutdown by signal %v", config.Conf.App.Name, sigQuit.String())
+	wg := &sync.WaitGroup{}
 	wg.Add(1)
 	go func(s *grpc_boot.ServerType, name string, wg *sync.WaitGroup) {
 		defer Recovery()
@@ -356,7 +370,14 @@ func (s *Server) Run() {
 	}(grpc_boot.Server(), config.Conf.App.Name, wg)
 	wg.Wait()
 
-	server.Shutdown(ctx)
+	// Wait for background handlers before closing the infrastructure they use.
+	util.WaitTimeout(s.waitGroup, 2*time.Second)
+
+	// Cleanup runs last, synchronously, so infrastructure is not closed while
+	// requests or background handlers are still using them.
+	for _, h := range s.onShutdownHandlers {
+		h(s.Driver)
+	}
 }
 
 func (s *Server) ensurePprofHandlers() {

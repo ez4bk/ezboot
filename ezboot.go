@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
 
-	"github.com/ez4bk/ezboot/internal/gin-boot/middleware"
+	"github.com/ez4bk/ezboot/internal/gin-boot/infra"
 
 	boot "github.com/ez4bk/ezboot/internal/gin-boot"
 	"github.com/ez4bk/ezboot/internal/gin-boot/config"
@@ -33,18 +33,22 @@ func ProvideLogger() *Logger {
 // DiscardLogger 是一个默认的空输出的日志记录器
 var DiscardLogger = zap.NewNop().Sugar()
 
-// ProvideRedis 加载Redis依赖
-func ProvideRedis() *redis.Client {
-	return boot.MW.DefaultRedis()
+// ProvideRedis 加载 Redis 依赖。需要在 Wire 中使用 Redis 时，把
+// ezboot.ProvideRedis 加进调用方的 wire.Build。
+func ProvideRedis() (*redis.Client, error) {
+	_ = boot.Default()
+	return infra.Default().Redis("default")
 }
 
-type RabbitMQClient = middleware.RabbitMQClient
-type RabbitMQPublisher = middleware.RabbitMQPublisher
-type RabbitMQConsumer = middleware.RabbitMQConsumer
+type RabbitMQClient = infra.RabbitMQClient
+type RabbitMQPublisher = infra.RabbitMQPublisher
+type RabbitMQConsumer = infra.RabbitMQConsumer
 
-// ProvideRabbitMQ 加载RabbitMQ依赖
-func ProvideRabbitMQ() *RabbitMQClient {
-	return (*RabbitMQClient)(boot.MW.RabbitMQ())
+// ProvideRabbitMQ 加载 RabbitMQ 依赖。需要在 Wire 中使用 RabbitMQ 时，
+// 把 ezboot.ProvideRabbitMQ 加进调用方的 wire.Build。
+func ProvideRabbitMQ() (*RabbitMQClient, error) {
+	_ = boot.Default()
+	return infra.Default().RabbitMQ()
 }
 
 // LoadUserConfig 加载用户配置

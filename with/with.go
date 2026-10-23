@@ -31,7 +31,7 @@ func DefaultTransaction(ctx context.Context, action func(context.Context) error)
 		}
 	}
 
-	_, err := boot.MW.DefaultTransaction(ctx, func(db *xorm.Session) (interface{}, error) {
+	_, err := boot.Infra.DefaultTransaction(ctx, func(db *xorm.Session) (interface{}, error) {
 		return nil, action(KeepSession(ctx, db))
 	})
 	return err
@@ -43,14 +43,14 @@ func DefaultSession(ctx context.Context, action func(db *xorm.Session) error) (e
 		return action(session)
 	}
 
-	session := boot.MW.DefaultSession(ctx)
+	session := boot.Infra.DefaultSession(ctx)
 	defer func() { err = multierr.Append(err, session.Close()) }()
 	return action(session)
 }
 
 // DefaultRedis 从上下文对象中创建一个 redis 会话
 func DefaultRedis(ctx context.Context, action func(rdb *redis.Client) error) error {
-	c := boot.MW.DefaultRedis().WithContext(ctx)
+	c := boot.Infra.DefaultRedis().WithContext(ctx)
 	// do not close the client
 	return action(c)
 }

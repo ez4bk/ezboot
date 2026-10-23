@@ -1,4 +1,4 @@
-package middleware
+package infra
 
 import (
 	"xorm.io/xorm/log"
@@ -33,7 +33,7 @@ func (w *XormLogger) IsShowSQL() bool {
 	return w.showSQL
 }
 
-// IsShowSQL ...
+// Level ...
 func (w *XormLogger) Level() log.LogLevel {
 	return log.DEFAULT_LOG_LEVEL
 }

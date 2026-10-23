@@ -3,7 +3,7 @@
  *
  */
 
-package middleware
+package infra
 
 import (
 	"encoding/json"
@@ -19,10 +19,10 @@ var DefaultExpireDur = time.Minute * 5
 
 // ICache ICache
 type ICache interface {
-	Put(prefix, key string, value interface{}) error
-	PutWithExpire(prefix, key string, value interface{}, expire time.Duration) error
-	PutUnExpired(prefix, key string, value interface{}) error
-	Get(prefix, key string, vtype interface{}) (interface{}, bool)
+	Put(prefix, key string, value any) error
+	PutWithExpire(prefix, key string, value any, expire time.Duration) error
+	PutUnExpired(prefix, key string, value any) error
+	Get(prefix, key string, vtype any) (any, bool)
 	Delete(prefix, key string)
 }
 
@@ -40,7 +40,7 @@ func generate(prefix, key string) string {
 	return prefix + "-" + key
 }
 
-func (c *RedisCache) put(prefix, key string, value interface{}, expire time.Duration) error {
+func (c *RedisCache) put(prefix, key string, value any, expire time.Duration) error {
 	content, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -51,22 +51,22 @@ func (c *RedisCache) put(prefix, key string, value interface{}, expire time.Dura
 }
 
 // Put Put
-func (c *RedisCache) Put(prefix, key string, value interface{}) error {
+func (c *RedisCache) Put(prefix, key string, value any) error {
 	return c.put(prefix, key, value, DefaultExpireDur)
 }
 
 // PutWithExpire PutWithExpire
-func (c *RedisCache) PutWithExpire(prefix, key string, value interface{}, expire time.Duration) error {
+func (c *RedisCache) PutWithExpire(prefix, key string, value any, expire time.Duration) error {
 	return c.put(prefix, key, value, expire)
 }
 
 // PutUnExpired PutUnExpired
-func (c *RedisCache) PutUnExpired(prefix, key string, value interface{}) error {
+func (c *RedisCache) PutUnExpired(prefix, key string, value any) error {
 	return c.put(prefix, key, value, 0)
 }
 
 // Get Get
-func (c *RedisCache) Get(prefix, key string, vtype interface{}) (interface{}, bool) {
+func (c *RedisCache) Get(prefix, key string, vtype any) (any, bool) {
 	cmd := c.backend.Get(generate(prefix, key))
 	content := cmd.Val()
 
