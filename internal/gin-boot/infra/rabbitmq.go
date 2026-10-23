@@ -1,6 +1,7 @@
 package infra
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -68,6 +69,30 @@ func (r *rabbitMQ) close() error {
 	err := r.client.Shutdown()
 	r.client = nil
 	return err
+}
+
+func (r *rabbitMQ) healthy(_ context.Context) []error {
+	r.mu.Lock()
+	client := r.client
+	r.mu.Unlock()
+
+	if client == nil {
+		return nil
+	}
+
+	var errs []error
+	for name, publisher := range client.Publishers {
+		if !publisher.Ready() {
+			errs = append(errs, fmt.Errorf("rabbitmq publisher %q is not ready", name))
+		}
+	}
+	for name, consumer := range client.Consumers {
+		if !consumer.Ready() {
+			errs = append(errs, fmt.Errorf("rabbitmq consumer %q is not ready", name))
+		}
+	}
+
+	return errs
 }
 
 // RabbitMQ returns the configured RabbitMQ client.
@@ -260,6 +285,13 @@ func (b *RabbitMQBase) GetChannel() *amqp.Channel {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.channel
+}
+
+// Ready reports whether the connection and channel are established.
+func (b *RabbitMQBase) Ready() bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.isReady && !b.closed
 }
 
 // Close will cleanly shut down the channel and connection. It also stops the

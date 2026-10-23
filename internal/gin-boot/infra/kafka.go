@@ -1,7 +1,9 @@
 package infra
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -62,6 +64,34 @@ func (k *kafkaClients) close() error {
 	defer k.mu.Unlock()
 	k.client = nil
 	return nil
+}
+
+func (k *kafkaClients) healthy(ctx context.Context) []error {
+	k.mu.RLock()
+	client := k.client
+	k.mu.RUnlock()
+
+	if client == nil {
+		return nil
+	}
+	if len(client.brokers) == 0 {
+		return []error{errors.New("kafka: no brokers configured")}
+	}
+
+	var errs []error
+	for _, broker := range client.brokers {
+		conn, err := kafka.DialContext(ctx, "tcp", broker)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("kafka broker %q: %w", broker, err))
+			continue
+		}
+		_, err = conn.Controller()
+		_ = conn.Close()
+		if err != nil {
+			errs = append(errs, fmt.Errorf("kafka broker %q: %w", broker, err))
+		}
+	}
+	return errs
 }
 
 // Kafka returns the configured Kafka broker set.

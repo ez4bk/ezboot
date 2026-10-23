@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -9,7 +10,12 @@ import (
 const (
 	// _DefaultHealthyEndpoint 默认的健康检查端点地址
 	_DefaultHealthyEndpoint = "/_healthy"
+	// _DefaultReadyEndpoint 默认的就绪检查端点地址
+	_DefaultReadyEndpoint = "/readyz"
 )
+
+// ReadyFunc 判断当前实例是否可以接收流量。
+type ReadyFunc func(ctx context.Context) error
 
 // healthyOK 健康检查的结果
 var healthyOK struct {
@@ -32,6 +38,32 @@ func WithHealthy(endpoint ...string) ServerOption {
 			s.cfg.App.Middleware.HTTP.Logger.Excludes, endpoint...)
 
 		s.Engine().Handle(http.MethodGet, endpoint[0], func(c *gin.Context) {
+			c.JSON(http.StatusOK, healthyOK)
+		})
+		return nil
+	}
+}
+
+// WithReady 添加就绪检查端点。依赖未配置时由 ReadyFunc 自行跳过，配置了
+// 但不可用时返回 503。
+func WithReady(ready ReadyFunc, endpoint ...string) ServerOption {
+	if len(endpoint) == 0 {
+		endpoint = append(endpoint, _DefaultReadyEndpoint)
+	}
+
+	return func(s *Server) error {
+		s.Engine().Handle(http.MethodGet, endpoint[0], func(c *gin.Context) {
+			if ready == nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"status": "not ready"})
+				return
+			}
+			if err := ready(c.Request.Context()); err != nil {
+				c.JSON(http.StatusServiceUnavailable, gin.H{
+					"status": "not ready",
+					"error":  err.Error(),
+				})
+				return
+			}
 			c.JSON(http.StatusOK, healthyOK)
 		})
 		return nil

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 
@@ -217,8 +218,12 @@ func (s *Set) Close(ctx context.Context) error {
 	return s.closeErr
 }
 
-// Healthy checks the dependencies that can be probed cheaply. It is intended
-// for readiness endpoints; it must not be used as a liveness check.
+// Healthy checks every configured dependency. It is intended for readiness
+// endpoints; it must not be used as a liveness check.
+//
+// Resources with Startup=false are not opened and are skipped, so a missing
+// optional dependency does not make the process unready. A dependency that
+// was configured but is unreachable is reported as an error.
 func (s *Set) Healthy(ctx context.Context) error {
 	if s == nil {
 		return errors.New("ezboot: infrastructure is nil")
@@ -227,9 +232,21 @@ func (s *Set) Healthy(ctx context.Context) error {
 		ctx = context.Background()
 	}
 
+	checks := []func(context.Context) []error{
+		s.db.healthy,
+		s.redis.healthy,
+		s.kafka.healthy,
+		s.rabbitMQ.healthy,
+		s.search.healthy,
+		s.etcd.healthy,
+	}
+
 	var errs []error
-	errs = append(errs, s.db.healthy(ctx)...)
-	errs = append(errs, s.redis.healthy(ctx)...)
+	for _, check := range checks {
+		checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		errs = append(errs, check(checkCtx)...)
+		cancel()
+	}
 
 	return errors.Join(errs...)
 }

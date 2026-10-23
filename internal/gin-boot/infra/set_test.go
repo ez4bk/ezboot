@@ -184,3 +184,14 @@ func TestOpenMySQLExposesTheEnginePool(t *testing.T) {
 		t.Fatal("DB.SQL() does not point at the xorm engine pool")
 	}
 }
+
+func TestSetHealthySkipsUnconfiguredDependencies(t *testing.T) {
+	var nilSet *Set
+	if err := nilSet.Healthy(context.Background()); err == nil {
+		t.Fatal("nil Set.Healthy() = nil, want an error")
+	}
+
+	if err := (&Set{}).Healthy(context.Background()); err != nil {
+		t.Fatalf("empty Set.Healthy() = %v, want nil", err)
+	}
+}

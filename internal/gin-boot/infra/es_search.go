@@ -1,9 +1,12 @@
 package infra
 
 import (
+	"context"
+	"fmt"
 	"sync"
 
 	"github.com/elastic/go-elasticsearch/v7"
+	"github.com/elastic/go-elasticsearch/v7/esapi"
 
 	"github.com/ez4bk/ezboot/internal/gin-boot/conf_type"
 	"github.com/ez4bk/ezboot/internal/gin-boot/config"
@@ -52,6 +55,29 @@ func (s *searchClients) close() error {
 	defer s.mu.Unlock()
 	s.clients = nil
 	return nil
+}
+
+func (s *searchClients) healthy(ctx context.Context) []error {
+	s.mu.RLock()
+	clients := make(map[string]*elasticsearch.Client, len(s.clients))
+	for name, client := range s.clients {
+		clients[name] = client
+	}
+	s.mu.RUnlock()
+
+	var errs []error
+	for name, client := range clients {
+		res, err := esapi.InfoRequest{}.Do(ctx, client)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("elasticsearch %q: %w", name, err))
+			continue
+		}
+		if res.IsError() {
+			errs = append(errs, fmt.Errorf("elasticsearch %q: %s", name, res.Status()))
+		}
+		_ = res.Body.Close()
+	}
+	return errs
 }
 
 // Elasticsearch returns a configured Elasticsearch client by name.

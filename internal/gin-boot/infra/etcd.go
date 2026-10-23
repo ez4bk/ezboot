@@ -1,6 +1,8 @@
 package infra
 
 import (
+	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -79,6 +81,29 @@ func (e *etcdClient) close() error {
 	err := e.client.Close()
 	e.client = nil
 	return err
+}
+
+func (e *etcdClient) healthy(ctx context.Context) []error {
+	e.mu.RLock()
+	client := e.client
+	e.mu.RUnlock()
+
+	if client == nil {
+		return nil
+	}
+
+	endpoints := client.Endpoints()
+	if len(endpoints) == 0 {
+		return []error{fmt.Errorf("etcd: no endpoints configured")}
+	}
+
+	var errs []error
+	for _, endpoint := range endpoints {
+		if _, err := client.Status(ctx, endpoint); err != nil {
+			errs = append(errs, fmt.Errorf("etcd endpoint %q: %w", endpoint, err))
+		}
+	}
+	return errs
 }
 
 // Etcd returns the configured etcd client.

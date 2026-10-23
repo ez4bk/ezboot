@@ -1,6 +1,8 @@
 package ezboot
 
 import (
+	"context"
+
 	"github.com/go-redis/redis"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
@@ -49,6 +51,15 @@ type RabbitMQConsumer = infra.RabbitMQConsumer
 func ProvideRabbitMQ() (*RabbitMQClient, error) {
 	_ = boot.Default()
 	return infra.Default().RabbitMQ()
+}
+
+// Healthy checks every configured infrastructure dependency. Dependencies
+// with Startup=false are skipped. It is intended for readiness probes:
+//
+//	http.WithReady(ezboot.Healthy)
+func Healthy(ctx context.Context) error {
+	_ = boot.Default()
+	return infra.Default().Healthy(ctx)
 }
 
 // LoadUserConfig 加载用户配置
