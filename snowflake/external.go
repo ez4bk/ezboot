@@ -1,9 +1,5 @@
 package snowflake
 
-import (
-	"github.com/ez4bk/ezboot/sbs"
-)
-
 const (
 	Zero    ID = 0
 	Invalid ID = -1
@@ -22,7 +18,7 @@ func ParseString(id string) (ID, error) {
 	if id == "" {
 		return Zero, nil
 	}
-	return ParseBase58(sbs.Bytes(id))
+	return ParseBase58([]byte(id))
 }
 
 // ParsePointPString converts a string into a snowflake ID (override)
@@ -31,7 +27,7 @@ func ParsePointPString(id *string) (*ID, error) {
 		return nil, nil
 	}
 
-	res, err := ParseBase58(sbs.Bytes(*id))
+	res, err := ParseBase58([]byte(*id))
 	return &res, err
 }
 

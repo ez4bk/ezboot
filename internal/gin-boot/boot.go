@@ -38,7 +38,6 @@ import (
 	"github.com/ez4bk/ezboot/internal/gin-boot/middleware"
 	"github.com/ez4bk/ezboot/internal/gin-boot/middleware/tracing/otelgin"
 	"github.com/ez4bk/ezboot/internal/gin-boot/migration"
-	"github.com/ez4bk/ezboot/internal/gin-boot/registry"
 	"github.com/ez4bk/ezboot/internal/gin-boot/util"
 	_ "github.com/ez4bk/ezboot/internal/gin-boot/validation"
 	"github.com/ez4bk/ezboot/internal/gin-boot/version"
@@ -50,7 +49,6 @@ var (
 	logger       *logging.Logger
 	Env          env.EnvType
 	Config       config.Config
-	Registry     *registry.Registry
 	configLoaded bool
 	Version      string
 )
@@ -227,9 +225,6 @@ func Default() *Server {
 
 	// initGRPCClient
 	initGRPCClient()
-
-	// init registry
-	Registry = registry.GetRegistry()
 
 	// init gin mode
 	gin.SetMode(env.GinMode(env.Env.Mode))
