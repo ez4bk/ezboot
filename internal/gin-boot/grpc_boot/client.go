@@ -7,11 +7,15 @@ import (
 	"math"
 	"reflect"
 	"strconv"
+	"sync"
 	"time"
 
-	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
+	grpcprometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"go.elastic.co/apm/module/apmgrpc"
+	"golang.org/x/sync/singleflight"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 
@@ -28,8 +32,6 @@ const clientPerReqTimeout = "cli_req_tmout"
 var passThroughMetadata = []string{middleware.UserKey, middleware.TraceID}
 
 var (
-	clients                = map[string]*grpc.ClientConn{}
-	confClients            = &conf_type.GRPCClients{}
 	defaultKeepAliveParams = keepalive.ClientParameters{
 		Time:                time.Duration(math.MaxInt64),
 		Timeout:             20 * time.Second,
@@ -40,8 +42,30 @@ var (
 	registered = map[reflect.Type]*reflect.Value{}
 )
 
+// ErrClientsClosed is returned when a client is requested after the pool has
+// been closed.
+var ErrClientsClosed = errors.New("grpc: client pool is closed")
+
+var (
+	clientsMu     sync.RWMutex
+	clients       = map[string]*grpc.ClientConn{}
+	confClients   = &conf_type.GRPCClients{}
+	clientsClosed bool
+	clientGroup   singleflight.Group
+)
+
+func closeClientConns(conns map[string]*grpc.ClientConn) error {
+	var errs []error
+	for name, conn := range conns {
+		if err := conn.Close(); err != nil {
+			errs = append(errs, fmt.Errorf("close grpc client %q: %w", name, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // InjectAllClient InjectAllClient
-func InjectAllClient(v interface{}) {
+func InjectAllClient(v any) {
 	log := logging.Default().With("function", "inject_grpc_client")
 	if v == nil {
 		log.Panic("unable inject client to nil value")
@@ -105,7 +129,7 @@ func injectClientToStruct(v reflect.Value) error {
 }
 
 // RegisterClient : RegisterClient("server_kind", func(*grpc.ClientConn) SomeServiceClient)
-func RegisterClient(serverKind string, newFunc interface{}) {
+func RegisterClient(serverKind string, newFunc any) {
 	logger := logging.Default().With("error_when_RegisterClient", serverKind)
 
 	tNewFunc := reflect.TypeOf(newFunc)
@@ -124,33 +148,97 @@ func RegisterClient(serverKind string, newFunc interface{}) {
 	registered[clientType] = &vNewFunc
 }
 
-// InitClient InitClient
+// InitClient replaces the process-level client pool.
+// The YAML map key is the client name.
 func InitClient(conf *conf_type.GRPCClients) {
+	clientsMu.Lock()
+	old := clients
+	clients = make(map[string]*grpc.ClientConn)
 	confClients = conf
+	clientsClosed = false
+	clientsMu.Unlock()
+
+	_ = closeClientConns(old)
 }
 
-// DefaultClient DefaultClient
-func DefaultClient() (*grpc.ClientConn, error) {
-	return GetClient("default")
-}
-
-// GetClient GetClient
+// GetClient returns a cached connection from the process-level pool.
 func GetClient(name string) (*grpc.ClientConn, error) {
-	if _, ok := (*confClients)[name]; !ok {
-		return nil, fmt.Errorf("not defined in config: grpc client: %v", name)
+	clientsMu.RLock()
+	if clientsClosed {
+		clientsMu.RUnlock()
+		return nil, ErrClientsClosed
 	}
-	cfg := (*confClients)[name]
-	dialOptions := GetDialOptions(cfg)
-	return NewClient(cfg.Addr, cfg.TimeoutPerRequest.Duration, dialOptions...)
+	if conn, ok := clients[name]; ok {
+		clientsMu.RUnlock()
+		return conn, nil
+	}
+	conf := confClients
+	clientsMu.RUnlock()
+
+	if conf == nil {
+		return nil, errors.New("grpc: client config is nil")
+	}
+
+	value, err, _ := clientGroup.Do(name, func() (any, error) {
+		clientsMu.Lock()
+		if clientsClosed {
+			clientsMu.Unlock()
+			return nil, ErrClientsClosed
+		}
+		if conn, ok := clients[name]; ok {
+			clientsMu.Unlock()
+			return conn, nil
+		}
+		cfg, ok := (*conf)[name]
+		clientsMu.Unlock()
+		if !ok || cfg == nil {
+			return nil, fmt.Errorf("not defined in config: grpc client: %v", name)
+		}
+
+		conn, err := NewClient(cfg.Addr, cfg.TimeoutPerRequest.Duration, GetDialOptions(cfg)...)
+		if err != nil {
+			return nil, err
+		}
+
+		clientsMu.Lock()
+		if clientsClosed {
+			clientsMu.Unlock()
+			_ = conn.Close()
+			return nil, ErrClientsClosed
+		}
+		clients[name] = conn
+		clientsMu.Unlock()
+		return conn, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	conn, _ := value.(*grpc.ClientConn)
+	return conn, nil
 }
 
-// NewClient NewClient
+// CloseClients closes and clears the process-level client pool.
+func CloseClients() error {
+	clientsMu.Lock()
+	if clientsClosed {
+		clientsMu.Unlock()
+		return nil
+	}
+	clientsClosed = true
+	old := clients
+	clients = make(map[string]*grpc.ClientConn)
+	clientsMu.Unlock()
+
+	return closeClientConns(old)
+}
+
+// NewClient creates a standalone connection that is not managed by a pool.
 func NewClient(addr string, timeout time.Duration, dialOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
 	return dial(addr, timeout, dialOptions...)
 }
 
 func copyRequestContextInterceptor(copyFields []string) grpc.UnaryClientInterceptor {
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		outgoingMD, ok := metadata.FromOutgoingContext(ctx)
 		if !ok {
 			outgoingMD = metadata.New(map[string]string{})
@@ -164,7 +252,7 @@ func copyRequestContextInterceptor(copyFields []string) grpc.UnaryClientIntercep
 					continue
 				}
 
-				// not set by incomming context, skip
+				// not set by incoming context, skip
 				if len(incomingMD.Get(field)) == 0 {
 					continue
 				}
@@ -181,7 +269,7 @@ func requestTimeoutClientInterceptor(timeoutPerRequest time.Duration) grpc.Unary
 	if timeoutPerRequest == 0 {
 		timeoutPerRequest = defaultClientTimeoutPerRequest
 	}
-	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		ctxTimeout, canceler := context.WithTimeout(ctx, timeoutPerRequest)
 		ctxTmout := util.AppendToOutgoingContext(ctxTimeout, clientPerReqTimeout, timeoutPerRequest.String())
 		defer canceler()
@@ -190,11 +278,11 @@ func requestTimeoutClientInterceptor(timeoutPerRequest time.Duration) grpc.Unary
 }
 
 func dial(addr string, timeoutPerRequest time.Duration, dialOptions ...grpc.DialOption) (*grpc.ClientConn, error) {
-	return grpc.Dial(addr, append(
+	return grpc.NewClient(addr, append(
 		dialOptions,
 		grpc.WithChainUnaryInterceptor(
 			apmgrpc.NewUnaryClientInterceptor(),
-			grpc_prometheus.UnaryClientInterceptor,
+			grpcprometheus.UnaryClientInterceptor,
 			middleware.GRPCEnvClientInterceptor(),
 			requestTimeoutClientInterceptor(timeoutPerRequest),
 			copyRequestContextInterceptor(passThroughMetadata),
@@ -231,32 +319,43 @@ func GetDialOptions(options *conf_type.GRPCClient) []grpc.DialOption {
 		dialOptions = append(dialOptions, grpc.WithInitialConnWindowSize(options.WithInitialConnWindowSize))
 	}
 
-	if options.WithMaxMsgSize > 0 {
-		dialOptions = append(dialOptions, grpc.WithMaxMsgSize(options.WithMaxMsgSize))
+	var callOptions []grpc.CallOption
+	if options.WithMaxCallRecvMsgSize > 0 {
+		callOptions = append(callOptions, grpc.MaxCallRecvMsgSize(options.WithMaxCallRecvMsgSize))
+	}
+	if options.MaxCallSendMsgSize > 0 {
+		callOptions = append(callOptions, grpc.MaxCallSendMsgSize(options.MaxCallSendMsgSize))
+	}
+	if len(callOptions) > 0 {
+		dialOptions = append(dialOptions, grpc.WithDefaultCallOptions(callOptions...))
 	}
 
-	if options.WithBackoffMaxDelay > 0 {
-		dialOptions = append(dialOptions, grpc.WithBackoffMaxDelay(options.WithBackoffMaxDelay*time.Millisecond))
+	if options.ConnectParams != nil {
+		connectParams := grpc.ConnectParams{Backoff: backoff.DefaultConfig}
+		if options.ConnectParams.Backoff.BaseDelay > 0 {
+			connectParams.Backoff.BaseDelay = options.ConnectParams.Backoff.BaseDelay * time.Millisecond
+		}
+		if options.ConnectParams.Backoff.Multiplier > 0 {
+			connectParams.Backoff.Multiplier = options.ConnectParams.Backoff.Multiplier
+		}
+		if options.ConnectParams.Backoff.Jitter > 0 {
+			connectParams.Backoff.Jitter = options.ConnectParams.Backoff.Jitter
+		}
+		if options.ConnectParams.Backoff.MaxDelay > 0 {
+			connectParams.Backoff.MaxDelay = options.ConnectParams.Backoff.MaxDelay * time.Millisecond
+		}
+		if options.ConnectParams.MinConnectTimeout > 0 {
+			connectParams.MinConnectTimeout = options.ConnectParams.MinConnectTimeout * time.Millisecond
+		}
+		dialOptions = append(dialOptions, grpc.WithConnectParams(connectParams))
 	}
 
-	if options.WithBackoffMaxDelay > 0 {
-		dialOptions = append(dialOptions, grpc.WithBackoffMaxDelay(options.WithBackoffMaxDelay*time.Millisecond))
-	}
-
-	if options.WithBlock == true {
-		dialOptions = append(dialOptions, grpc.WithBlock())
+	if options.IdleTimeout > 0 {
+		dialOptions = append(dialOptions, grpc.WithIdleTimeout(options.IdleTimeout*time.Millisecond))
 	}
 
 	if options.WithInsecure == true {
-		dialOptions = append(dialOptions, grpc.WithInsecure())
-	}
-
-	if options.WithTimeout > 0 {
-		dialOptions = append(dialOptions, grpc.WithTimeout(options.WithTimeout*time.Millisecond))
-	}
-
-	if options.FailOnNonTempDialError == true {
-		dialOptions = append(dialOptions, grpc.FailOnNonTempDialError(options.FailOnNonTempDialError))
+		dialOptions = append(dialOptions, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	}
 
 	if options.WithUserAgent != "" {
@@ -277,6 +376,10 @@ func GetDialOptions(options *conf_type.GRPCClient) []grpc.DialOption {
 
 	if options.WithMaxHeaderListSize > 0 {
 		dialOptions = append(dialOptions, grpc.WithMaxHeaderListSize(options.WithMaxHeaderListSize))
+	}
+
+	if options.DefaultServiceConfig != "" {
+		dialOptions = append(dialOptions, grpc.WithDefaultServiceConfig(options.DefaultServiceConfig))
 	}
 
 	// keepalive ClientParameters

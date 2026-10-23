@@ -11,7 +11,7 @@ type GRPCClient struct {
 	// Naming if using etcd for naming
 	Naming bool `yaml:"naming"`
 
-	// provide Addr when not Naming
+	// Addr is the upstream gRPC address.
 	Addr string `yaml:"addr"`
 
 	TimeoutPerRequest custom.YAMLDuration `yaml:"timeout_per_request"`
@@ -39,11 +39,10 @@ type GRPCClient struct {
 	// initial window size on a connection. The lower bound for window size is 64K
 	// and any value smaller than that will be ignored.
 	WithInitialConnWindowSize int32 `yaml:"with_initial_conn_window_size"`
-	// WithMaxMsgSize returns a DialOption which sets the maximum message size the
-	// client can receive.
-	//
-	// Deprecated: use WithDefaultCallOptions(MaxCallRecvMsgSize(s)) instead.
-	WithMaxMsgSize int `yaml:"with_max_msg_size"`
+	// WithMaxCallRecvMsgSize sets the maximum message size the client can
+	// receive. It is applied with grpc.WithDefaultCallOptions and
+	// grpc.MaxCallRecvMsgSize.
+	WithMaxCallRecvMsgSize int `yaml:"with_max_call_recv_msg_size"`
 	// WithBalancerName sets the balancer that the ClientConn will be initialized
 	// with. Balancer registered with balancerName will be used. This function
 	// panics if no balancer was registered by balancerName.
@@ -53,32 +52,24 @@ type GRPCClient struct {
 	//
 	// This is an EXPERIMENTAL API.
 	WithBalancerName string `yaml:"with_balancer_name"`
-	// WithBackoffMaxDelay configures the dialer to use the provided maximum delay
-	// when backing off after failed connection attempts.
-	WithBackoffMaxDelay time.Duration `yaml:"with_backoff_max_delay"`
-	// WithBlock returns a DialOption which makes caller of Dial blocks until the
-	// underlying connection is up. Without this, Dial returns immediately and
-	// connecting the server happens in background.
-	WithBlock bool `yaml:"with_block"`
+	// ConnectParams configures gRPC connection backoff and the minimum connect
+	// timeout. It maps directly to grpc.ConnectParams.
+	ConnectParams *ConnectParams `yaml:"connect_params"`
 	// WithInsecure returns a DialOption which disables transport security for this
 	// ClientConn. Note that transport security is required unless WithInsecure is
 	// set.
 	WithInsecure bool `yaml:"with_insecure"`
-	// WithTimeout returns a DialOption that configures a timeout for dialing a
-	// ClientConn initially. This is valid if and only if WithBlock() is present.
-	//
-	// Deprecated: use DialContext and context.WithTimeout instead.
-	WithTimeout time.Duration `yaml:"with_timeout"`
-	// FailOnNonTempDialError returns a DialOption that specifies if gRPC fails on
-	// non-temporary dial errors. If f is true, and dialer returns a non-temporary
-	// error, gRPC will fail the connection to the network address and won't try to
-	// reconnect. The default value of FailOnNonTempDialError is false.
-	//
-	// FailOnNonTempDialError only affects the initial dial, and does not do
-	// anything useful unless you are also using WithBlock().
-	//
-	// This is an EXPERIMENTAL API.
-	FailOnNonTempDialError bool `yaml:"fail_on_non_temp_dial_error"`
+	// IdleTimeout configures how long a connection may be idle before the client
+	// closes it. It maps to grpc.WithIdleTimeout. The value is interpreted as
+	// milliseconds.
+	IdleTimeout time.Duration `yaml:"idle_timeout"`
+	// DefaultServiceConfig is a JSON service config applied to the connection.
+	// It maps to grpc.WithDefaultServiceConfig and can be used for load balancing
+	// and retry policies.
+	DefaultServiceConfig string `yaml:"default_service_config"`
+	// MaxCallSendMsgSize sets the maximum message size the client can send.
+	// It maps to grpc.MaxCallSendMsgSize through grpc.WithDefaultCallOptions.
+	MaxCallSendMsgSize int `yaml:"max_call_send_msg_size"`
 	// WithUserAgent returns a DialOption that specifies a user agent string for all
 	// the RPCs.
 	WithUserAgent string `yaml:"with_user_agent"`
@@ -259,7 +250,26 @@ type GRPCServer struct {
 	KeepaliveEnforcementPolicyPermitWithoutStream bool `yaml:"keepalive_enforcement_policy_permit_without_stream"`
 }
 
-// GRPCClients GRPCClients
+// ConnectParams configures gRPC connection backoff and minimum connect timeout.
+// Durations are interpreted as milliseconds.
+type ConnectParams struct {
+	Backoff           BackoffConfig `yaml:"backoff"`
+	MinConnectTimeout time.Duration `yaml:"min_connect_timeout"`
+}
+
+// BackoffConfig configures exponential reconnect backoff.
+// Durations are interpreted as milliseconds.
+type BackoffConfig struct {
+	BaseDelay  time.Duration `yaml:"base_delay"`
+	Multiplier float64       `yaml:"multiplier"`
+	Jitter     float64       `yaml:"jitter"`
+	MaxDelay   time.Duration `yaml:"max_delay"`
+}
+
+// GRPCClients maps logical client names to their configuration.
+//
+// The YAML map key is the client name used by GetClient and by the
+// grpc_client_inject tag.
 type GRPCClients map[string]*GRPCClient
 
 // GRPC GRPC

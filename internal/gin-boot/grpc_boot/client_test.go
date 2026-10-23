@@ -1,6 +1,7 @@
 package grpc_boot
 
 import (
+	"errors"
 	"net"
 	"testing"
 
@@ -50,6 +51,7 @@ func TestInjectAllClient(t *testing.T) {
 			WithInsecure: true,
 		},
 	})
+	t.Cleanup(func() { _ = CloseClients() })
 
 	t.Run("normal", func(t *testing.T) {
 		var v struct {
@@ -201,4 +203,45 @@ func TestInjectAllClient(t *testing.T) {
 		assert.Nil(t, v.Apple)
 		assert.NotNil(t, v.Banana)
 	})
+}
+
+func TestClientsReuseAndClose(t *testing.T) {
+	InitClient(&conf_type.GRPCClients{
+		"default": &conf_type.GRPCClient{
+			Addr:         "localhost:23456",
+			WithInsecure: true,
+		},
+	})
+	t.Cleanup(func() { _ = CloseClients() })
+
+	first, err := GetClient("default")
+	if err != nil {
+		t.Fatalf("GetClient(default) = %v", err)
+	}
+	second, err := GetClient("default")
+	if err != nil {
+		t.Fatalf("GetClient(default) second call = %v", err)
+	}
+	if first != second {
+		t.Fatal("GetClient(default) created a second connection instead of reusing the first")
+	}
+
+	if err := CloseClients(); err != nil {
+		t.Fatalf("CloseClients() = %v", err)
+	}
+	if err := CloseClients(); err != nil {
+		t.Fatalf("second CloseClients() = %v", err)
+	}
+	if _, err := GetClient("default"); !errors.Is(err, ErrClientsClosed) {
+		t.Fatalf("GetClient() after Close = %v, want ErrClientsClosed", err)
+	}
+}
+
+func TestClientsUnknownName(t *testing.T) {
+	InitClient(&conf_type.GRPCClients{})
+	t.Cleanup(func() { _ = CloseClients() })
+
+	if _, err := GetClient("missing"); err == nil {
+		t.Fatal("GetClient(missing) = nil error, want an error")
+	}
 }

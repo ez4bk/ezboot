@@ -256,6 +256,10 @@ func Default() *Server {
 	)
 
 	server.OnShutdown(func(server *_http.Driver) {
+		if err := grpc_boot.CloseClients(); err != nil {
+			logger.Warnw("failed to close gRPC clients", "error", err)
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := infra.ShutdownContext(ctx); err != nil {
