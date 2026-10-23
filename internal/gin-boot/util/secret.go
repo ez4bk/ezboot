@@ -3,105 +3,86 @@
 package util
 
 import (
-	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/hmac"
-	"crypto/md5"
-	"crypto/sha1"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 )
 
-// AESEncrypt byte to secret byte
-// return data length may be different with input, be careful
-func AESEncrypt(origData, iv, key []byte) ([]byte, error) {
-	if len(origData) == 0 {
-		return nil, fmt.Errorf("origData is empty")
+// Encrypt encrypts plainText with AES-256-GCM.
+//
+// The key is an application secret; it must be provided by the caller (for
+// example from an environment variable) and must not be hard-coded. The key
+// material is derived with SHA-256 so callers can use an arbitrary-length
+// secret. A fresh nonce is generated for every call and prepended to the
+// ciphertext.
+func Encrypt(plainText, key string) (string, error) {
+	if key == "" {
+		return "", fmt.Errorf("secret: encryption key is empty")
 	}
 
-	block, err := aes.NewCipher(key)
+	gcm, err := newGCM(key)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	if block.BlockSize() != len(iv) {
-		return nil, fmt.Errorf("iv size %v not equal block size %v", len(iv), block.BlockSize())
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return "", fmt.Errorf("secret: generate nonce: %w", err)
 	}
 
-	origData = PKCS5Padding(origData, block.BlockSize())
-	blockMode := cipher.NewCBCEncrypter(block, iv)
-	crypt := make([]byte, len(origData))
-	blockMode.CryptBlocks(crypt, origData)
-	return crypt, nil
+	sealed := gcm.Seal(nonce, nonce, []byte(plainText), nil)
+	return base64.StdEncoding.EncodeToString(sealed), nil
 }
 
-// AESDecrypt secret byte to byte
-func AESDecrypt(crypt, iv, key []byte) ([]byte, error) {
-	if len(crypt) == 0 {
-		return nil, fmt.Errorf("crypt is empty")
+// Decrypt decrypts a value produced by Encrypt.
+func Decrypt(cipherText, key string) (string, error) {
+	if key == "" {
+		return "", fmt.Errorf("secret: encryption key is empty")
 	}
 
-	block, err := aes.NewCipher(key)
+	raw, err := base64.StdEncoding.DecodeString(cipherText)
 	if err != nil {
-		return nil, err
+		return "", fmt.Errorf("secret: decode ciphertext: %w", err)
 	}
 
-	if block.BlockSize() != len(iv) {
-		return nil, fmt.Errorf("iv size %v not equal block size %v", len(iv), block.BlockSize())
+	gcm, err := newGCM(key)
+	if err != nil {
+		return "", err
+	}
+	if len(raw) < gcm.NonceSize() {
+		return "", fmt.Errorf("secret: ciphertext is too short")
 	}
 
-	blockMode := cipher.NewCBCDecrypter(block, iv)
-	origData := make([]byte, len(crypt))
-	blockMode.CryptBlocks(origData, crypt)
-	origData = PKCS5UnPadding(origData)
-	if origData == nil {
-		return nil, fmt.Errorf("secret decode error")
+	nonce, data := raw[:gcm.NonceSize()], raw[gcm.NonceSize():]
+	plain, err := gcm.Open(nil, nonce, data, nil)
+	if err != nil {
+		return "", fmt.Errorf("secret: decrypt: %w", err)
 	}
-	return origData, nil
+	return string(plain), nil
 }
 
-// PKCS5Padding is padding byte
-func PKCS5Padding(cipherText []byte, blockSize int) []byte {
-	padding := blockSize - len(cipherText)%blockSize
-	paddingText := bytes.Repeat([]byte{byte(padding)}, padding)
-	return append(cipherText, paddingText...)
-}
-
-// PKCS5UnPadding is un padding byte
-func PKCS5UnPadding(origData []byte) []byte {
-	length := len(origData)
-	unPadding := int(origData[length-1])
-	if unPadding >= length {
-		return nil
+func newGCM(key string) (cipher.AEAD, error) {
+	sum := sha256.Sum256([]byte(key))
+	block, err := aes.NewCipher(sum[:])
+	if err != nil {
+		return nil, fmt.Errorf("secret: create cipher: %w", err)
 	}
-	return origData[:(length - unPadding)]
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("secret: create GCM: %w", err)
+	}
+	return gcm, nil
 }
 
-// Base64Encode is Base64Encode
+// Base64Encode encodes bytes as standard base64.
 func Base64Encode(input []byte) string {
 	return base64.StdEncoding.EncodeToString(input)
 }
 
-// Base64Decode is Base64Decode
+// Base64Decode decodes standard base64.
 func Base64Decode(input string) ([]byte, error) {
-	b, err := base64.StdEncoding.DecodeString(input)
-	if err != nil {
-		return nil, err
-	}
-	return b, nil
-}
-
-// HMACSHA1Encrypt encrype data as hmac-sha1
-func HMACSHA1Encrypt(origData, key []byte) []byte {
-	return hmac.New(sha1.New, key).Sum(origData)
-}
-
-// MD5 sum input string's md5
-func MD5(s string) string {
-	md5Ctx := md5.New()
-	md5Ctx.Write([]byte(s))
-	cipherStr := md5Ctx.Sum(nil)
-	return hex.EncodeToString(cipherStr)
+	return base64.StdEncoding.DecodeString(input)
 }

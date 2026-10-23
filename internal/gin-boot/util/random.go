@@ -3,14 +3,18 @@
 package util
 
 import (
-	"math/rand"
-	"time"
+	"crypto/rand"
+	"fmt"
 )
 
 const constCharCollections = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
-// RandomData gen random data len by byte num
+// RandomData generates cryptographically secure random bytes.
 func RandomData(byteNum int) ([]byte, error) {
+	if byteNum < 0 {
+		return nil, fmt.Errorf("random: negative length %d", byteNum)
+	}
+
 	data := make([]byte, byteNum)
 	if _, err := rand.Read(data); err != nil {
 		return nil, err
@@ -18,13 +22,31 @@ func RandomData(byteNum int) ([]byte, error) {
 	return data, nil
 }
 
-// RandomString is get random string
+// RandomString returns a cryptographically secure random string of length
+// strLen using the base62 alphabet.
 func RandomString(strLen int) string {
-	bytes := []byte(constCharCollections)
-	var result []byte
-	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	for i := 0; i < strLen; i++ {
-		result = append(result, bytes[r.Intn(len(bytes))])
+	if strLen <= 0 {
+		return ""
 	}
-	return string(result)
+
+	const maxByte = 248 // 248 == 62 * 4, rejection sampling avoids modulo bias
+	out := make([]byte, strLen)
+	buf := make([]byte, strLen)
+
+	for i := 0; i < strLen; {
+		if _, err := rand.Read(buf); err != nil {
+			panic(fmt.Sprintf("random: %v", err))
+		}
+		for _, b := range buf {
+			if b >= maxByte {
+				continue
+			}
+			out[i] = constCharCollections[int(b)%len(constCharCollections)]
+			i++
+			if i == strLen {
+				break
+			}
+		}
+	}
+	return string(out)
 }

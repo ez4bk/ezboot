@@ -16,6 +16,9 @@ import (
 
 const (
 	RewriteFileName = "config_rewrite.yml"
+	// ConfigSecretEnv is the environment variable holding the AES-GCM key for
+	// encrypted MySQL DSN values.
+	ConfigSecretEnv = "EZ_CONFIG_SECRET"
 )
 
 // Config Config
@@ -86,7 +89,11 @@ func InitConfig(filepath string) {
 
 		// Decrypt mysql username and password if "Mysql.Encrypt" is true
 		if v.Encrypt {
-			decryptDsn, err := decryptMysqlDsn(Conf.App.Middleware.Mysql[k].Dsn, path.Base(filepath))
+			secret := os.Getenv(ConfigSecretEnv)
+			if secret == "" {
+				util.ChkErr(fmt.Errorf("mysql %q is encrypted but %s is not set", k, ConfigSecretEnv))
+			}
+			decryptDsn, err := decryptMysqlDsn(Conf.App.Middleware.Mysql[k].Dsn, path.Base(filepath), secret)
 			util.ChkErr(err)
 			Conf.App.Middleware.Mysql[k] = conf_type.Mysql{Dsn: decryptDsn, Startup: v.Startup}
 		}
@@ -140,7 +147,7 @@ func ReadConfig(configName string, configPath string, configType string) error {
 }
 
 // Decrypt mysql username and password
-func decryptMysqlDsn(dsn, configName string) (string, error) {
+func decryptMysqlDsn(dsn, configName, secret string) (string, error) {
 	atSep, colonSep := "@", ":"
 	var newDsnBuilder strings.Builder
 	dbAccount := strings.Split(dsn, atSep)[0]
@@ -163,7 +170,7 @@ func decryptMysqlDsn(dsn, configName string) (string, error) {
 			return "", fmt.Errorf(errorMsg, "or", configName, dsn)
 		}
 
-		plainText, err := util.Decrypt(v)
+		plainText, err := util.Decrypt(v, secret)
 		if err != nil {
 			return "", fmt.Errorf(errorMsg, "or", configName, dsn)
 		}
