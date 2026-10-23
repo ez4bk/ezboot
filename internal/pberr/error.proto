@@ -13,3 +13,8 @@ message WithHttpStatus {
 message WithCauseError {
     string cause_error = 1;
 }
+
+// 业务错误码；与 gRPC status code 分开，避免把业务码塞进 codes.Code
+message WithBizCode {
+    uint32 biz_code = 1;
+}
