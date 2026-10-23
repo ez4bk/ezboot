@@ -14,7 +14,7 @@ import (
 
 	"github.com/ez4bk/ezboot/grpc/gateway"
 	_cfg "github.com/ez4bk/ezboot/internal/gin-boot/config"
-	_grpc "github.com/ez4bk/ezboot/internal/gin-boot/grpc-boot"
+	_grpc "github.com/ez4bk/ezboot/internal/gin-boot/grpc_boot"
 	"github.com/ez4bk/ezboot/internal/gin-boot/middleware"
 )
 

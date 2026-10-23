@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 
-	conf_type "github.com/ez4bk/ezboot/internal/gin-boot/conf-type"
+	"github.com/ez4bk/ezboot/internal/gin-boot/conf_type"
 )
 
 type DummyClient struct {

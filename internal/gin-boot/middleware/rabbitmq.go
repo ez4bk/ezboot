@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	conf_type "github.com/ez4bk/ezboot/internal/gin-boot/conf-type"
+	conf_type "github.com/ez4bk/ezboot/internal/gin-boot/conf_type"
 	"github.com/ez4bk/ezboot/internal/logging"
 	amqp "github.com/rabbitmq/amqp091-go"
 )

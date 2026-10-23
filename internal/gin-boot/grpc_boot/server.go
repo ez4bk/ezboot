@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc/channelz/service"
 	"google.golang.org/grpc/keepalive"
 
-	conf_type "github.com/ez4bk/ezboot/internal/gin-boot/conf-type"
+	"github.com/ez4bk/ezboot/internal/gin-boot/conf_type"
 	"github.com/ez4bk/ezboot/internal/gin-boot/config"
 	"github.com/ez4bk/ezboot/internal/gin-boot/middleware"
 	"github.com/ez4bk/ezboot/internal/gin-boot/util"

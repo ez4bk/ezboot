@@ -31,7 +31,7 @@ import (
 	"github.com/ez4bk/ezboot/internal/gin-boot/config"
 	"github.com/ez4bk/ezboot/internal/gin-boot/env"
 	"github.com/ez4bk/ezboot/internal/gin-boot/file"
-	grpc_boot "github.com/ez4bk/ezboot/internal/gin-boot/grpc-boot"
+	grpc_boot "github.com/ez4bk/ezboot/internal/gin-boot/grpc_boot"
 	_http "github.com/ez4bk/ezboot/internal/gin-boot/http"
 	"github.com/ez4bk/ezboot/internal/gin-boot/internal/cmd"
 	"github.com/ez4bk/ezboot/internal/gin-boot/middleware"

@@ -18,7 +18,7 @@ import (
 	"go.uber.org/multierr"
 	"xorm.io/xorm"
 
-	conf_type "github.com/ez4bk/ezboot/internal/gin-boot/conf-type"
+	conf_type "github.com/ez4bk/ezboot/internal/gin-boot/conf_type"
 	"github.com/ez4bk/ezboot/internal/gin-boot/config"
 	"github.com/ez4bk/ezboot/internal/gin-boot/middleware/tracing/otelxorm"
 	"github.com/ez4bk/ezboot/internal/gin-boot/util"

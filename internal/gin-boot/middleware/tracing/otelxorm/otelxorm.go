@@ -12,7 +12,7 @@ import (
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"xorm.io/xorm/contexts"
 
-	conf_type "github.com/ez4bk/ezboot/internal/gin-boot/conf-type"
+	"github.com/ez4bk/ezboot/internal/gin-boot/conf_type"
 	"github.com/ez4bk/ezboot/internal/gin-boot/middleware/tracing"
 	"github.com/ez4bk/ezboot/internal/gin-boot/util"
 )

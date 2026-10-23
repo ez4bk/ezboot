@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v2"
 
-	conf_type "github.com/ez4bk/ezboot/internal/gin-boot/conf-type"
+	"github.com/ez4bk/ezboot/internal/gin-boot/conf_type"
 	"github.com/ez4bk/ezboot/internal/gin-boot/env"
 	"github.com/ez4bk/ezboot/internal/gin-boot/util"
 )

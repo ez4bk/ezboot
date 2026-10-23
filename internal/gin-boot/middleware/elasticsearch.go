@@ -5,7 +5,7 @@ import (
 
 	"github.com/elastic/go-elasticsearch/v7"
 
-	conf_type "github.com/ez4bk/ezboot/internal/gin-boot/conf-type"
+	conf_type "github.com/ez4bk/ezboot/internal/gin-boot/conf_type"
 	"github.com/ez4bk/ezboot/internal/gin-boot/util"
 )
 

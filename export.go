@@ -1,6 +1,6 @@
 package ezboot
 
-import grpc_boot "github.com/ez4bk/ezboot/internal/gin-boot/grpc-boot"
+import "github.com/ez4bk/ezboot/internal/gin-boot/grpc_boot"
 
 type ServerType = grpc_boot.ServerType
 
