@@ -122,9 +122,9 @@ func (s *Set) KafkaWriter(topic string) (*kafka.Writer, error) {
 	if len(k.brokers) == 0 {
 		return nil, resourceError("kafka", defaultName, errors.New("no brokers configured"))
 	}
-	return kafka.NewWriter(kafka.WriterConfig{
-		Brokers:  k.brokers,
+	return &kafka.Writer{
+		Addr:     kafka.TCP(k.brokers...),
 		Topic:    topic,
 		Balancer: &kafka.LeastBytes{},
-	}), nil
+	}, nil
 }
