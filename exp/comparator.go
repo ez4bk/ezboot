@@ -1,12 +1,9 @@
 package exp
 
+import "slices"
+
 func In[T comparable](array []T, v T) bool {
-	for _, x := range array {
-		if x == v {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(array, v)
 }
 
 func Max[T Ordered](a, b T) T {
