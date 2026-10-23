@@ -8,7 +8,7 @@ import (
 )
 
 // ConnGroup 对连接进行分组
-type ConnGroup[G any] struct {
+type ConnGroup[G comparable] struct {
 	ms exp.LazyMapSet[G, uint64]
 }
 
@@ -43,4 +43,4 @@ func (g *ConnGroup[G]) Broadcast(ctx context.Context, gid G, id *string, kind st
 }
 
 // NewGroup 创建一个连接组
-func NewGroup[K any]() *ConnGroup[K] { return &ConnGroup[K]{} }
+func NewGroup[K comparable]() *ConnGroup[K] { return &ConnGroup[K]{} }
