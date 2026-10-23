@@ -18,8 +18,11 @@ require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/goccy/go-json v0.11.2 // indirect
 	github.com/golang/snappy v1.0.0 // indirect
+	github.com/klauspost/compress v1.20.3 // indirect
 	github.com/onsi/ginkgo v1.16.4 // indirect
 	github.com/onsi/gomega v1.15.0 // indirect
+	github.com/pierrec/lz4/v4 v4.1.33 // indirect
+	github.com/segmentio/kafka-go v0.4.51 // indirect
 	github.com/syndtr/goleveldb v1.0.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	xorm.io/builder v0.3.13 // indirect
