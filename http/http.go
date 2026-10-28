@@ -56,15 +56,6 @@ func NewEngine(cfg *_cfg.Config) *gin.Engine {
 	return engine
 }
 
-// auxServer 是 pprof / metrics 使用的附属监听器。
-type auxServer struct {
-	addr    string
-	handler http.Handler
-
-	ln  net.Listener
-	srv *http.Server
-}
-
 // Server 是一个HTTP插件。它实现 ezboot.Plugin：
 //
 // Start 绑定端口并开始服务（阻塞），Ready 报告端口已绑定，
@@ -73,12 +64,15 @@ type Server struct {
 	cfg    *_cfg.Config
 	engine *gin.Engine
 
-	// aux 是 pprof / metrics 的独立监听器；为空表示挂在业务端口
-	aux []*auxServer
+	// pprof / metrics 使用独立端口时记录地址；为空表示挂在业务端口
+	pprofAddr   string
+	metricsAddr string
 
-	mu       sync.Mutex
-	listener net.Listener
-	server   *http.Server
+	mu         sync.Mutex
+	listener   net.Listener
+	server     *http.Server
+	pprofSrv   *http.Server
+	metricsSrv *http.Server
 }
 
 // Engine 返回所使用的底层Http服务
@@ -105,24 +99,49 @@ func (s *Server) Start(ctx context.Context) error {
 	s.server = hs
 	s.mu.Unlock()
 
-	errCh := make(chan error, 1+len(s.aux))
+	errCh := make(chan error, 3)
 	go func() { errCh <- hs.Serve(ln) }()
 
-	for _, a := range s.aux {
-		aln, err := net.Listen("tcp", a.addr)
+	if s.pprofAddr != "" {
+		pln, err := net.Listen("tcp", s.pprofAddr)
 		if err != nil {
 			_ = hs.Close()
 			return err
 		}
 
-		as := &http.Server{Handler: a.handler}
+		ph := gin.New()
+		pprof.Register(ph)
+		ps := &http.Server{Handler: ph}
 
 		s.mu.Lock()
-		a.ln = aln
-		a.srv = as
+		s.pprofSrv = ps
 		s.mu.Unlock()
 
-		go func(a *auxServer) { errCh <- a.srv.Serve(a.ln) }(a)
+		go func() { errCh <- ps.Serve(pln) }()
+	}
+
+	if s.metricsAddr != "" {
+		mln, err := net.Listen("tcp", s.metricsAddr)
+		if err != nil {
+			_ = hs.Close()
+
+			s.mu.Lock()
+			ps := s.pprofSrv
+			s.mu.Unlock()
+			if ps != nil {
+				_ = ps.Close()
+			}
+
+			return err
+		}
+
+		ms := &http.Server{Handler: promhttp.Handler()}
+
+		s.mu.Lock()
+		s.metricsSrv = ms
+		s.mu.Unlock()
+
+		go func() { errCh <- ms.Serve(mln) }()
 	}
 
 	err = <-errCh
@@ -146,15 +165,15 @@ func (s *Server) Ready(context.Context) error {
 // Drain 停止接收新请求并等待在途请求结束。
 func (s *Server) Drain(ctx context.Context) error {
 	s.mu.Lock()
-	hs := s.server
-	aux := append([]*auxServer(nil), s.aux...)
+	hs, ps, ms := s.server, s.pprofSrv, s.metricsSrv
 	s.mu.Unlock()
 
 	var errs []error
-	for _, a := range aux {
-		if a.srv != nil {
-			errs = append(errs, a.srv.Shutdown(ctx))
-		}
+	if ps != nil {
+		errs = append(errs, ps.Shutdown(ctx))
+	}
+	if ms != nil {
+		errs = append(errs, ms.Shutdown(ctx))
 	}
 	if hs != nil {
 		errs = append(errs, hs.Shutdown(ctx))
@@ -256,13 +275,7 @@ func (s *Server) setupDiagnostics() {
 	if business || empty {
 		pprof.Register(s.engine)
 	} else {
-		h := gin.New()
-		pprof.Register(h)
-
-		s.aux = append(s.aux, &auxServer{
-			addr:    net.JoinHostPort(s.cfg.App.PprofHost, strconv.Itoa(s.cfg.App.PprofPort)),
-			handler: h,
-		})
+		s.pprofAddr = net.JoinHostPort(s.cfg.App.PprofHost, strconv.Itoa(s.cfg.App.PprofPort))
 	}
 
 	// metrics：默认关闭；listen 为空时挂在业务端口
@@ -276,11 +289,10 @@ func (s *Server) setupDiagnostics() {
 		path = "/metrics"
 	}
 
-	handler := promhttp.Handler()
 	if monitor.ListenAddr == "" {
-		s.engine.GET(path, gin.WrapH(handler))
+		s.engine.GET(path, gin.WrapH(promhttp.Handler()))
 		return
 	}
 
-	s.aux = append(s.aux, &auxServer{addr: monitor.ListenAddr, handler: handler})
+	s.metricsAddr = monitor.ListenAddr
 }
