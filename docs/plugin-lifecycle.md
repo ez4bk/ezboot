@@ -192,14 +192,14 @@ ezboot/
 ### 6.2 默认组合
 
 ```go
-// ezboot/wire.go
+// ezboot/wire.go —— 只装“无需定制、恒定启用”的插件
 var DefaultProviderSet = wire.NewSet(
     tracing.NewOTEL,
-    grpc.New,
-    http.New,
     grpcclient.NewGRPCClient,
 )
 ```
+
+**http / grpc 插件刻意不放进默认集合**：它们需要路由、service 注册、网关等应用特有参数，必须由应用自己的 provider 构造。把 `grpc.New` / `http.New` 放进来会与应用构造器产生同类型冲突（wire: multiple bindings）。
 
 infra 插件**不在**默认组合中：只用 HTTP 的服务不应该因为引入了框架就打开 Redis。`pprof` 与 `metrics` 不是插件，分别并进 HTTP / gRPC 插件。
 
@@ -313,12 +313,10 @@ Migrate()               自动迁移，由 Application 在插件启动前调用
 // 框架
 var DefaultProviderSet = wire.NewSet(
     tracing.NewOTEL,
-    grpc.New,
-    http.New,
     grpcclient.NewGRPCClient,
 )
 
-// 调用方
+// 调用方（http / grpc 由应用自己构造）
 func NewPlugins(
     otel *tracing.OTEL,
     db *infra.MySQL,
