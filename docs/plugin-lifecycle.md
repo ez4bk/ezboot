@@ -263,7 +263,7 @@ app:
     close_timeout: 5s    # 释放，每个插件
 ```
 
-零值取框架默认。运维需要保证：
+对应 `conf_type.Lifecycle`（`custom.YAMLDuration`，支持 `10s` / `500ms`），由 `ezboot.WithLifecycleConfig(cfg)` 传入。零值取框架默认。运维需要保证：
 
 ```
 terminationGracePeriodSeconds > Σ(drain_timeout) + Σ(close_timeout) + 余量
@@ -390,7 +390,8 @@ Phase 3 与 4 必须一起落地：`boot.Default()` 一旦不再 `infra.Open`，
 - Phase 4：`internal/gin-boot/infra` 迁到公共包 `infra`，`Set` 拆成六个插件；`boot.Infra`、`infra.Open`、`infra.Healthy` 删除。`with` 改为由 MySQL / Redis 插件注册默认句柄。
 - Phase 5：`http.Server` / `grpc.Server` 实现 `Plugin`；`net.Listen` 移到 `Start`；`http.New` 不再依赖 `boot.Default()`，自带 `NewEngine`；pprof 并入 HTTP 插件。
 - Phase 6：`Application` 改用 lifecycle；`boot.Migrate()` 在启动插件前执行；`boot.InitTelemetry()` 由 `ProvideConfig` 调用，保证 gRPC 拦截器早于 driver 构造。
-- Phase 8：`tracing.OTEL` 与 `grpc/client.GRPCClient` 插件；`ezboot.DefaultProviderSet`。
+- Phase 7：template 迁移 —— `NewPlugins` 收口 `[]ezboot.Plugin`、`ezboot.State` 接入 `/readyz`、MySQL 插件、chart 的 `terminationGracePeriodSeconds` 与 readiness 探针。
+- Phase 8：`tracing.OTEL` 与 `grpc/client.GRPCClient` 插件；`ezboot.DefaultProviderSet`；metrics 集成进 http / grpc。
 - 清理：`boot.Default` / `Server` / `Run` 与 `internal/gin-boot/internal/cmd` 删除，`boot.go` 从 469 行降到 225 行。
 
 Kafka 的 broker 句柄类型从 `Kafka` 改名为 `KafkaBrokers`，`Kafka` 这个名字留给插件。
