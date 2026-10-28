@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"sync"
 
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 
@@ -177,6 +178,12 @@ func New(cfg *_cfg.Config, options ...ServerOption) (s *Server, err error) {
 
 	_grpc.SetConfig(&cfg.App.Middleware.GRPC.Server.Default)
 	s.gs = _grpc.Create(cfg.App.Name, cfg.App.Name)
+
+	// metrics 属于构造期注册：拦截器已经在 GrpcInterceptors 里，这里把
+	// 收集器接到 prometheus 默认注册表上。
+	if cfg.App.Middleware.Monitor.StartUp {
+		grpc_prometheus.Register(s.gs.Driver())
+	}
 
 	return s, nil
 }
