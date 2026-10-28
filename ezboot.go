@@ -2,13 +2,12 @@ package ezboot
 
 import (
 	"context"
+	"errors"
 
 	"github.com/go-redis/redis"
 	"github.com/go-viper/mapstructure/v2"
 	"github.com/spf13/viper"
 	"go.uber.org/zap"
-
-	"github.com/ez4bk/ezboot/internal/gin-boot/infra"
 
 	boot "github.com/ez4bk/ezboot/internal/gin-boot"
 	"github.com/ez4bk/ezboot/internal/gin-boot/config"
@@ -35,31 +34,23 @@ func ProvideLogger() *Logger {
 // DiscardLogger 是一个默认的空输出的日志记录器
 var DiscardLogger = zap.NewNop().Sugar()
 
-// ProvideRedis 加载 Redis 依赖。需要在 Wire 中使用 Redis 时，把
-// ezboot.ProvideRedis 加进调用方的 wire.Build。
-func ProvideRedis() (*redis.Client, error) {
-	_ = boot.Default()
-	return infra.Default().Redis("default")
-}
+// ErrResourceUnavailable 表示进程级基础设施不再由框架持有：资源现在由
+// 各自的插件负责，需要通过 ezboot/infra 引入。
+var ErrResourceUnavailable = errors.New("ezboot: resource unavailable")
 
-type RabbitMQClient = infra.RabbitMQClient
-type RabbitMQPublisher = infra.RabbitMQPublisher
-type RabbitMQConsumer = infra.RabbitMQConsumer
-
-// ProvideRabbitMQ 加载 RabbitMQ 依赖。需要在 Wire 中使用 RabbitMQ 时，
-// 把 ezboot.ProvideRabbitMQ 加进调用方的 wire.Build。
-func ProvideRabbitMQ() (*RabbitMQClient, error) {
-	_ = boot.Default()
-	return infra.Default().RabbitMQ()
-}
-
-// Healthy checks every configured infrastructure dependency. Dependencies
-// with Startup=false are skipped. It is intended for readiness probes:
+// ProvideRedis 已废弃。
 //
-//	http.WithReady(ezboot.Healthy)
-func Healthy(ctx context.Context) error {
-	_ = boot.Default()
-	return infra.Default().Healthy(ctx)
+// Deprecated: 加入 infra.Redis 插件，并通过该插件的 Redis(name) 访问客户端。
+func ProvideRedis() (*redis.Client, error) {
+	return nil, ErrResourceUnavailable
+}
+
+// Healthy 已废弃。
+//
+// Deprecated: 就绪状态现在由 ezboot.State 提供；依赖探活由各插件的 Ready
+// 在启动阶段完成。
+func Healthy(context.Context) error {
+	return ErrResourceUnavailable
 }
 
 // LoadUserConfig 加载用户配置

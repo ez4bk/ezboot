@@ -26,7 +26,7 @@ func cleanData(data any) any {
 }
 
 // RegisterRemoteConfigDefault : Use default etcd
-func (s *Set) RegisterRemoteConfigDefault(ctx context.Context, mut *sync.Mutex, forceFirst bool, path string, data any, f func(any)) error {
+func (s *Etcd) RegisterRemoteConfigDefault(ctx context.Context, mut *sync.Mutex, forceFirst bool, path string, data any, f func(any)) error {
 	client, err := s.Etcd()
 	if err != nil {
 		return err
@@ -62,7 +62,7 @@ func writeData(mut *sync.Mutex, path string, value []byte, data any, f func(any)
 // RegisterRemoteConfig
 // f will be called when config change, it's your duty to make sure data used in f should be synced
 // f may be called multiple times
-func (s *Set) RegisterRemoteConfig(ctx context.Context, client *clientv3.Client, forceFirst bool, mut *sync.Mutex, path string, data any, f func(any)) error {
+func (s *Etcd) RegisterRemoteConfig(ctx context.Context, client *clientv3.Client, forceFirst bool, mut *sync.Mutex, path string, data any, f func(any)) error {
 	if client == nil {
 		panic("client should not be nil")
 	}

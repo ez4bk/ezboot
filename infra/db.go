@@ -315,62 +315,62 @@ func (d *dbConns) healthy(ctx context.Context) []error {
 }
 
 // DB returns the configured database handle selected by UseDefaultDatabase.
-func (s *Set) DB(name string) (*DB, error) {
+func (s *MySQL) DB(name string) (*DB, error) {
 	if s == nil {
 		return nil, resourceError("db", name, nil)
 	}
-	return s.db.db(name)
+	return s.dbConns.db(name)
 }
 
 // DefaultDB returns the default database handle.
-func (s *Set) DefaultDB() (*DB, error) {
+func (s *MySQL) DefaultDB() (*DB, error) {
 	return s.DB(defaultName)
 }
 
 // MySQL returns a configured MySQL handle by name.
-func (s *Set) MySQL(name string) (*DB, error) {
+func (s *MySQL) MySQL(name string) (*DB, error) {
 	if s == nil {
 		return nil, resourceError("mysql", name, nil)
 	}
-	return s.db.get(name, DatabaseMySQL)
+	return s.dbConns.get(name, DatabaseMySQL)
 }
 
 // SQLite returns a configured SQLite handle by name.
-func (s *Set) SQLite(name string) (*DB, error) {
+func (s *MySQL) SQLite(name string) (*DB, error) {
 	if s == nil {
 		return nil, resourceError("sqlite", name, nil)
 	}
-	return s.db.get(name, DatabaseSQLite)
+	return s.dbConns.get(name, DatabaseSQLite)
 }
 
 // Pgsql returns a configured PostgreSQL client by name.
-func (s *Set) Pgsql(name string) (*pg.DB, error) {
+func (s *MySQL) Pgsql(name string) (*pg.DB, error) {
 	if s == nil {
 		return nil, resourceError("pgsql", name, nil)
 	}
-	return s.db.pgsql(name)
+	return s.dbConns.pgsql(name)
 }
 
 // DefaultPgsql returns the default PostgreSQL client.
-func (s *Set) DefaultPgsql() (*pg.DB, error) {
+func (s *MySQL) DefaultPgsql() (*pg.DB, error) {
 	return s.Pgsql(defaultName)
 }
 
 // ORMEngine returns the xorm engine selected by UseDefaultDatabase.
-func (s *Set) ORMEngine(name string) (*xorm.Engine, error) {
+func (s *MySQL) ORMEngine(name string) (*xorm.Engine, error) {
 	if s == nil {
 		return nil, resourceError("db", name, nil)
 	}
-	return s.db.engine(name)
+	return s.dbConns.engine(name)
 }
 
 // DefaultORMEngine returns the default xorm engine.
-func (s *Set) DefaultORMEngine() (*xorm.Engine, error) {
+func (s *MySQL) DefaultORMEngine() (*xorm.Engine, error) {
 	return s.ORMEngine(defaultName)
 }
 
 // SqliteORMEngine returns the default SQLite xorm engine.
-func (s *Set) SqliteORMEngine() (*xorm.Engine, error) {
+func (s *MySQL) SqliteORMEngine() (*xorm.Engine, error) {
 	db, err := s.SQLite(defaultName)
 	if err != nil {
 		return nil, err
@@ -379,18 +379,18 @@ func (s *Set) SqliteORMEngine() (*xorm.Engine, error) {
 }
 
 // Session starts a session for the selected database.
-func (s *Set) Session(ctx context.Context, name string) (*xorm.Session, error) {
+func (s *MySQL) Session(ctx context.Context, name string) (*xorm.Session, error) {
 	if s == nil {
 		return nil, resourceError("db", name, nil)
 	}
-	return s.db.session(ctx, name)
+	return s.dbConns.session(ctx, name)
 }
 
 // DefaultSession starts a session for the default database.
 //
 // It returns nil when the default database is not configured. The
 // error-returning variant is Session(ctx, defaultName).
-func (s *Set) DefaultSession(ctx context.Context) *xorm.Session {
+func (s *MySQL) DefaultSession(ctx context.Context) *xorm.Session {
 	session, err := s.Session(ctx, defaultName)
 	if err != nil {
 		return nil
@@ -399,7 +399,7 @@ func (s *Set) DefaultSession(ctx context.Context) *xorm.Session {
 }
 
 // Transaction runs f in a transaction on the selected database.
-func (s *Set) Transaction(
+func (s *MySQL) Transaction(
 	ctx context.Context,
 	name string,
 	f func(*xorm.Session) (any, error),
@@ -407,11 +407,11 @@ func (s *Set) Transaction(
 	if s == nil {
 		return nil, resourceError("db", name, nil)
 	}
-	return s.db.transaction(ctx, name, f)
+	return s.dbConns.transaction(ctx, name, f)
 }
 
 // DefaultTransaction runs f in a transaction on the default database.
-func (s *Set) DefaultTransaction(
+func (s *MySQL) DefaultTransaction(
 	ctx context.Context,
 	f func(*xorm.Session) (any, error),
 ) (any, error) {
@@ -419,25 +419,10 @@ func (s *Set) DefaultTransaction(
 }
 
 // UseDefaultDatabase selects the database family used by DB/Session/Transaction.
-func (s *Set) UseDefaultDatabase(dbt DatabaseType) {
+func (s *MySQL) UseDefaultDatabase(dbt DatabaseType) {
 	if s != nil {
-		s.db.setDefault(dbt)
+		s.dbConns.setDefault(dbt)
 	}
-}
-
-// DefaultSession returns a session on the process-level default database.
-func DefaultSession(ctx context.Context) *xorm.Session {
-	return Default().DefaultSession(ctx)
-}
-
-// Session returns a session on the named database of the process-level
-// default Set.
-func Session(ctx context.Context, name string) *xorm.Session {
-	session, err := Default().Session(ctx, name)
-	if err != nil {
-		return nil
-	}
-	return session
 }
 
 // parseDSN splits "<dialect>:<dsn>" into schema and the remaining DSN.

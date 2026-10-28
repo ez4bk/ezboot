@@ -107,18 +107,18 @@ func (e *etcdClient) healthy(ctx context.Context) []error {
 }
 
 // Etcd returns the configured etcd client.
-func (s *Set) Etcd() (*clientv3.Client, error) {
+func (s *Etcd) Etcd() (*clientv3.Client, error) {
 	if s == nil {
 		return nil, resourceError("etcd", defaultName, nil)
 	}
-	return s.etcd.get()
+	return s.etcdClient.get()
 }
 
 // EtcdPolling reports whether remote config should use polling instead of a
 // watch stream.
-func (s *Set) EtcdPolling() bool {
+func (s *Etcd) EtcdPolling() bool {
 	if s == nil {
 		return false
 	}
-	return s.etcd.isPolling()
+	return s.etcdClient.isPolling()
 }

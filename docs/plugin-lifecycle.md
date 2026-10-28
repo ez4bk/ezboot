@@ -165,11 +165,12 @@ ezboot/
 | 现有 | 变化 |
 |---|---|
 | `ezboot.WithHttpServer` / `WithGrpcServer` | 删除，改用 `WithPlugins` |
-| `ezboot.Healthy` | 删除（探活分散到插件 `Ready`） |
-| `ezboot.ProvideRedis` / `ProvideRabbitMQ` | 标记 deprecated，改为对应插件的窄访问器 |
+| `ezboot.Healthy` | 已废弃，恒返回 `ErrResourceUnavailable`；就绪状态改用 `ezboot.State` |
+| `ezboot.ProvideRedis` | 已废弃，恒返回 `ErrResourceUnavailable`；改用 `infra.Redis` 插件 |
+| `ezboot.ProvideRabbitMQ` / `RabbitMQClient` 等别名 | 删除，改用 `ezboot/infra` |
 | `Application.Start(ctx)` | 保留，内部改为运行 lifecycle |
 | `boot.Server.Run` / `DefaultServer` / `boot.Server` | 删除 |
-| `boot.Infra` / `infra.Set` / `infra.Default()` | 删除 |
+| `boot.Infra` / `infra.Set` / `infra.Default()` / `infra.Open` / `infra.Healthy` | 删除 |
 
 ### 6.1 插件清单
 
@@ -379,7 +380,13 @@ func (s *State) Ready() error {
 
 Phase 3 与 4 必须一起落地：`boot.Default()` 一旦不再 `infra.Open`，依赖它的 `ProvideRedis` / `ProvideRabbitMQ` / `Healthy` 就失去数据源。过渡期内这些函数改为返回 `ErrResourceUnavailable` 并打 deprecation 日志，Phase 4 完成后再删除。
 
-**进度**：Phase 1–2 已完成 —— `plugin.go`、`state.go`、`lifecycle.go`、`lifecycle_test.go`。状态机不在任何现有启动路径上，可独立合入。
+**进度**：Phase 1–4 已完成。
+
+- Phase 1–2：`plugin.go`、`state.go`、`lifecycle.go`、`lifecycle_test.go`。
+- Phase 3：`boot.LoadFrameworkConfig()`，`LoadUserConfig` 不再触发 bootstrap。
+- Phase 4：`internal/gin-boot/infra` 迁到公共包 `infra`，`Set` 拆成六个插件；`boot.Infra`、`infra.Open`、`infra.Healthy` 删除。`with` 改为由 MySQL / Redis 插件注册默认句柄。
+
+Kafka 的 broker 句柄类型从 `Kafka` 改名为 `KafkaBrokers`，`Kafka` 这个名字留给插件。
 
 **验收**
 

@@ -96,7 +96,7 @@ func (r *rabbitMQ) healthy(_ context.Context) []error {
 }
 
 // RabbitMQ returns the configured RabbitMQ client.
-func (s *Set) RabbitMQ() (*RabbitMQClient, error) {
+func (s *RabbitMQ) RabbitMQ() (*RabbitMQClient, error) {
 	if s == nil {
 		return nil, resourceError("rabbitmq", defaultName, nil)
 	}

@@ -110,18 +110,18 @@ func (rr *redisClients) healthy(ctx context.Context) []error {
 }
 
 // Redis returns a configured Redis client by name.
-func (s *Set) Redis(name string) (*redis.Client, error) {
+func (s *Redis) Redis(name string) (*redis.Client, error) {
 	if s == nil {
 		return nil, resourceError("redis", name, nil)
 	}
-	return s.redis.get(name)
+	return s.redisClients.get(name)
 }
 
 // DefaultRedis returns the default Redis client.
 //
 // It returns nil when Redis is not configured. The error-returning variant
 // is Redis(defaultName).
-func (s *Set) DefaultRedis() *redis.Client {
+func (s *Redis) DefaultRedis() *redis.Client {
 	client, err := s.Redis(defaultName)
 	if err != nil {
 		return nil
@@ -130,15 +130,15 @@ func (s *Set) DefaultRedis() *redis.Client {
 }
 
 // Cache returns a configured cache by name.
-func (s *Set) Cache(name string) (ICache, error) {
+func (s *Redis) Cache(name string) (ICache, error) {
 	if s == nil {
 		return nil, resourceError("cache", name, nil)
 	}
-	return s.redis.cache(name)
+	return s.redisClients.cache(name)
 }
 
 // DefaultCache returns the default cache.
-func (s *Set) DefaultCache() (ICache, error) {
+func (s *Redis) DefaultCache() (ICache, error) {
 	return s.Cache(defaultName)
 }
 

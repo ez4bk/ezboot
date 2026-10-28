@@ -33,7 +33,6 @@ import (
 	"github.com/ez4bk/ezboot/internal/gin-boot/file"
 	"github.com/ez4bk/ezboot/internal/gin-boot/grpc_boot"
 	_http "github.com/ez4bk/ezboot/internal/gin-boot/http"
-	"github.com/ez4bk/ezboot/internal/gin-boot/infra"
 	"github.com/ez4bk/ezboot/internal/gin-boot/internal/cmd"
 	"github.com/ez4bk/ezboot/internal/gin-boot/middleware"
 	"github.com/ez4bk/ezboot/internal/gin-boot/middleware/tracing/otelgin"
@@ -212,19 +211,12 @@ func Default() *Server {
 		util.ChkErr(err)
 	}
 
-	// init infrastructure
-	logger.Debug("initializing infrastructure")
-	infras, err := infra.Open(config.Conf, logger)
-	util.ChkErr(err)
-	infra.SetDefault(infras)
-	Infra = infras
-
+	// infrastructure is owned by plugins now; the composition root opens it.
 	tracerProvider, err := middleware.InitOTEL(config.Conf)
 	if err != nil {
-		_ = infras.Close(context.Background())
 		util.ChkErr(err)
 	}
-	infras.SetTracerProvider(tracerProvider)
+	_ = tracerProvider
 
 	// initGRPCClient
 	initGRPCClient()
@@ -256,12 +248,6 @@ func Default() *Server {
 	server.OnShutdown(func(server *_http.Driver) {
 		if err := grpc_boot.CloseClients(); err != nil {
 			logger.Warnw("failed to close gRPC clients", "error", err)
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := infra.ShutdownContext(ctx); err != nil {
-			logger.Warnw("failed to close infrastructure", "error", err)
 		}
 	})
 	return server

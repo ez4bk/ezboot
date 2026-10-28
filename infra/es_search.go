@@ -81,15 +81,15 @@ func (s *searchClients) healthy(ctx context.Context) []error {
 }
 
 // Elasticsearch returns a configured Elasticsearch client by name.
-func (s *Set) Elasticsearch(name string) (*elasticsearch.Client, error) {
+func (s *Elasticsearch) Elasticsearch(name string) (*elasticsearch.Client, error) {
 	if s == nil {
 		return nil, resourceError("elasticsearch", name, nil)
 	}
-	return s.search.get(name)
+	return s.searchClients.get(name)
 }
 
 // DefaultElasticsearch returns the default Elasticsearch client.
-func (s *Set) DefaultElasticsearch() (*elasticsearch.Client, error) {
+func (s *Elasticsearch) DefaultElasticsearch() (*elasticsearch.Client, error) {
 	return s.Elasticsearch(defaultName)
 }
 
