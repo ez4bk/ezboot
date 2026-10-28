@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"sync"
+
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/jaeger"
@@ -13,10 +15,27 @@ import (
 	"github.com/ez4bk/ezboot/internal/gin-boot/env"
 )
 
+var (
+	otelOnce sync.Once
+	otelTP   *tracesdk.TracerProvider
+	otelErr  error
+)
+
 // InitOTEL configures the global OpenTelemetry tracer provider and propagator,
 // then registers the gRPC tracing interceptors. It returns nil when tracing
 // is disabled.
+//
+// It is idempotent: the process-level provider is created once, and later
+// calls return the same instance so a plugin can own its shutdown.
 func InitOTEL(cfg *config.Config) (*tracesdk.TracerProvider, error) {
+	otelOnce.Do(func() {
+		otelTP, otelErr = initOTEL(cfg)
+	})
+
+	return otelTP, otelErr
+}
+
+func initOTEL(cfg *config.Config) (*tracesdk.TracerProvider, error) {
 	if cfg == nil || !cfg.App.Middleware.Tracing.Startup {
 		return nil, nil
 	}

@@ -1,41 +1,25 @@
 package boot
 
 import (
-	"context"
 	"flag"
 	"fmt"
-	"log"
-	"net/http"
-	_ "net/http/pprof"
 	"os"
-	"os/signal"
 	"path"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
-	"syscall"
-	"time"
 
-	"github.com/alecthomas/kong"
-	"github.com/gin-contrib/pprof"
-	"github.com/gin-gonic/gin"
-	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/spf13/viper"
 	"go.elastic.co/apm"
 	"go.elastic.co/apm/transport"
 	"go.uber.org/zap/zapcore"
-	"google.golang.org/grpc/reflection"
 	"gopkg.in/yaml.v2"
 
 	"github.com/ez4bk/ezboot/internal/gin-boot/config"
 	"github.com/ez4bk/ezboot/internal/gin-boot/env"
 	"github.com/ez4bk/ezboot/internal/gin-boot/file"
 	"github.com/ez4bk/ezboot/internal/gin-boot/grpc_boot"
-	_http "github.com/ez4bk/ezboot/internal/gin-boot/http"
-	"github.com/ez4bk/ezboot/internal/gin-boot/internal/cmd"
 	"github.com/ez4bk/ezboot/internal/gin-boot/middleware"
-	"github.com/ez4bk/ezboot/internal/gin-boot/middleware/tracing/otelgin"
 	"github.com/ez4bk/ezboot/internal/gin-boot/migration"
 	"github.com/ez4bk/ezboot/internal/gin-boot/util"
 	_ "github.com/ez4bk/ezboot/internal/gin-boot/validation"
@@ -44,7 +28,6 @@ import (
 )
 
 var (
-	server       *Server
 	logger       *logging.Logger
 	Env          env.EnvType
 	Config       config.Config
@@ -52,37 +35,12 @@ var (
 	Version      string
 )
 
-// Recovery Recovery
-func Recovery() {
-	if r := recover(); r != nil {
-		logger.Fatalw(string(logging.Stack(5)), "panic", r)
-	}
-}
-
 var mut sync.Mutex
-
-var grpcServerReadyWG sync.WaitGroup
 
 var configPath string
 
 var customLogLevel string
 
-// DefaultServer ...
-func DefaultServer(_configPath, _customLogLevel string) *Server {
-	if _configPath != "" {
-		configPath = _configPath
-	}
-
-	if _customLogLevel != "" {
-		customLogLevel = _customLogLevel
-	}
-
-	return Default()
-}
-
-// LoadFrameworkConfig 是启动流程的第一阶段：导入环境、读取配置文件、
-// 初始化日志。它不打开任何资源，也不做数据库迁移，因此可以在构造任何
-// 插件之前单独调用。
 func LoadFrameworkConfig() error {
 	if configLoaded {
 		return nil
@@ -222,237 +180,8 @@ func Migrate() error {
 	return migrateErr
 }
 
-// Default Default
-func Default() *Server {
-	defer Recovery()
-	if server != nil {
-		return server
-	}
-	mut.Lock()
-	defer mut.Unlock()
-
-	// doubling-check
-	if server != nil {
-		return server
-	}
-
-	if err := LoadFrameworkConfig(); err != nil {
-		util.ChkErr(err)
-	}
-
-	if err := Migrate(); err != nil {
-		util.ChkErr(err)
-	}
-
-	if err := InitTelemetry(); err != nil {
-		util.ChkErr(err)
-	}
-
-	// init gin mode
-	gin.SetMode(env.GinMode(env.Env.Mode))
-
-	// init server
-	server = &Server{
-		waitGroup: &sync.WaitGroup{},
-	}
-	if server.RunningInConsole() {
-		ctx := kong.Parse(&cmd.Cli)
-		// Call the Run() method of the selected parsed command.
-		err := ctx.Run(cmd.Context{AppName: config.Conf.App.Name})
-		ctx.FatalIfErrorf(err)
-		return server
-	}
-	server.Register(initGRPCServer)
-	server.Driver = gin.New()
-	server.Driver.Use(
-		otelgin.Middleware(config.Conf.App.Name,
-			otelgin.WithEnabled(config.Conf.App.Middleware.Tracing.Startup),
-			otelgin.WithExcludes(append(config.Conf.App.Middleware.Tracing.Http.Excludes, "/metrics", "/debug")...)),
-		middleware.GinLogger(append(config.Conf.App.Middleware.HTTP.Logger.Excludes, "/debug/pprof/cmdline", "/metrics")...),
-		logging.GinRecovery(),
-	)
-
-	server.OnShutdown(func(server *_http.Driver) {
-		if err := grpc_boot.CloseClients(); err != nil {
-			logger.Warnw("failed to close gRPC clients", "error", err)
-		}
-	})
-	return server
-}
-
-// Server Server
-type Server struct {
-	_http.IServer
-	Driver             *_http.Driver
-	handlers           []Handler
-	backgroundHandlers []Handler
-	onShutdownHandlers []Handler
-	waitGroup          *sync.WaitGroup
-}
-
-// Handler Handler
-type Handler func(server *_http.Driver)
-
-// Register Register
-func (s *Server) Register(handlers ...Handler) *Server {
-	s.handlers = append(s.handlers, handlers...)
-	return s
-}
-
-// RegisterRoutine RegisterRoutine
-func (s *Server) RegisterRoutine(handlers ...Handler) *Server {
-	for _, h := range handlers {
-		hh := h
-		s.backgroundHandlers = append(s.backgroundHandlers, func(drv *_http.Driver) {
-			s.waitGroup.Add(1)
-			go func(wg *sync.WaitGroup, handler Handler) {
-				defer Recovery()
-				defer wg.Done()
-				handler(drv)
-			}(s.waitGroup, hh)
-		})
-	}
-	return s
-}
-
-// OnShutdown OnShutdown
-func (s *Server) OnShutdown(handlers ...Handler) *Server {
-	s.onShutdownHandlers = append(s.onShutdownHandlers, handlers...)
-	return s
-}
-
-// RunningInConsole Determine if the application is running in the console.
-func (s *Server) RunningInConsole() bool {
-	args := os.Args
-	return len(args) >= 2 && args[1] == "artisan"
-}
-
-// Run Run
-func (s *Server) Run() {
-	defer Recovery()
-	if s.RunningInConsole() {
-		return
-	}
-	httpAddr := config.Conf.App.Host + ":" + strconv.Itoa(config.Conf.App.Port)
-	logger.Debug("http server listening on : " + httpAddr)
-	s.Register(grpc_boot.InitGrpcGateway, startGRPCServer)
-	for _, h := range s.handlers {
-		h(s.Driver)
-	}
-	for _, h := range s.backgroundHandlers {
-		h(s.Driver)
-	}
-	shutdown := make(chan os.Signal, 1)
-	signal.Notify(shutdown, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGINT)
-
-	server := &http.Server{
-		Addr:    httpAddr,
-		Handler: s.Driver,
-	}
-
-	s.ensurePprofHandlers()
-
-	// Wait for the gRPC server ready
-	grpcServerReadyWG.Wait()
-	grpc_prometheus.Register(grpc_boot.Server().Driver())
-
-	go func(server *http.Server) {
-		defer Recovery()
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			util.ChkErr(err)
-		}
-	}(server)
-
-	sigQuit := <-shutdown
-
-	logger.Infof("shutting down by signal %v", sigQuit.String())
-
-	// Stop accepting new HTTP requests and drain in-flight handlers first.
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	if err := server.Shutdown(ctx); err != nil {
-		logger.Warnw("http server shutdown did not finish cleanly", "error", err)
-	}
-
-	// Then drain gRPC so gateway requests that are still in flight can finish.
-	logger.Infof("gRPC server %s gracefully shutdown by signal %v", config.Conf.App.Name, sigQuit.String())
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
-	go func(s *grpc_boot.ServerType, name string, wg *sync.WaitGroup) {
-		defer Recovery()
-		defer wg.Done()
-		s.Driver().GracefulStop()
-	}(grpc_boot.Server(), config.Conf.App.Name, wg)
-	wg.Wait()
-
-	// Wait for background handlers before closing the infrastructure they use.
-	util.WaitTimeout(s.waitGroup, 2*time.Second)
-
-	// Cleanup runs last, synchronously, so infrastructure is not closed while
-	// requests or background handlers are still using them.
-	for _, h := range s.onShutdownHandlers {
-		h(s.Driver)
-	}
-}
-
-func (s *Server) ensurePprofHandlers() {
-	if shouldPprofRegisterOnBusinessHandler() {
-		pprof.Register(s.Driver)
-	} else {
-		go func() {
-			defer Recovery()
-
-			pprofHandler := gin.Default()
-			pprof.Register(pprofHandler)
-			pprofSrv := &http.Server{
-				Addr:    fmt.Sprintf("%s:%d", config.Conf.App.PprofHost, config.Conf.App.PprofPort),
-				Handler: pprofHandler,
-			}
-
-			if err := pprofSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-				util.ChkErr(err)
-			}
-		}()
-	}
-}
-
-func shouldPprofRegisterOnBusinessHandler() bool {
-	// pporf host port 与业务 host port 相同 或者 pprof相关配置均为空，注册到业务的handler中
-	return (config.Conf.App.PprofHost == config.Conf.App.Host && config.Conf.App.PprofPort == config.Conf.App.Port) ||
-		(config.Conf.App.PprofHost == "" && config.Conf.App.PprofPort == 0)
-}
-
-func initGRPCServer(server *_http.Driver) {
-	if config.Conf.App.Middleware.GRPC.Server.Default.Startup_ {
-		addr := config.Conf.App.Middleware.GRPC.Server.Default.Addr
-		log.Printf("Init GRPC listener: %s\n", addr)
-		err := grpc_boot.InitListener(addr)
-		util.ChkErr(err)
-	}
-	grpc_boot.InitServer(&config.Conf.App.Middleware.GRPC.Server.Default)
-}
-
 func initGRPCClient() {
 	grpc_boot.InitClient(&config.Conf.App.Middleware.GRPC.Client)
-}
-
-func startGRPCServer(server *_http.Driver) {
-	if config.Conf.App.Middleware.GRPC.Server.Default.Startup_ {
-		grpcServerReadyWG.Add(1)
-
-		go func(name string, s *grpc_boot.ServerType) {
-			defer Recovery()
-			d := s.Driver()
-			reflection.Register(d)
-			// After registering, invoke wait group done
-			grpcServerReadyWG.Done()
-
-			logger.Infof("starting %v\n", name)
-			if err := d.Serve(s.Listener()); err != nil {
-				log.Fatalf("booting of grpc server is failed, name is %v, %v", name, err)
-			}
-		}(config.Conf.App.Name, grpc_boot.Server())
-	}
 }
 
 const (

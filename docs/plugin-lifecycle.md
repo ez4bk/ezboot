@@ -165,9 +165,9 @@ ezboot/
 | 现有 | 变化 |
 |---|---|
 | `ezboot.WithHttpServer` / `WithGrpcServer` | 标记 deprecated，内部转为插件注册；新代码用 `WithPlugins` |
-| `ezboot.Healthy` | 已废弃，恒返回 `ErrResourceUnavailable`；就绪状态改用 `ezboot.State` |
-| `ezboot.ProvideRedis` | 已废弃，恒返回 `ErrResourceUnavailable`；改用 `infra.Redis` 插件 |
-| `ezboot.ProvideRabbitMQ` / `RabbitMQClient` 等别名 | 删除，改用 `ezboot/infra` |
+| `ezboot.Healthy` | 删除；就绪状态改用 `ezboot.State` |
+| `ezboot.ProvideRedis` / `ProvideRabbitMQ` / `RabbitMQClient` 等别名 | 删除，改用 `ezboot/infra` |
+| `boot.Default` / `boot.Server` / `Run` / `DefaultServer` | 删除（约 240 行死代码） |
 | `Application.Start(ctx)` | 保留，内部改为运行 lifecycle |
 | `http.New` / `grpc.New` | 签名不变，但不再调用 `boot.Default()`；`net.Listen` 移到 `Start` |
 | `boot.Infra` / `infra.Set` / `infra.Default()` / `infra.Open` / `infra.Healthy` | 删除 |
@@ -192,12 +192,12 @@ ezboot/
 ### 6.2 默认组合
 
 ```go
-// 进入默认组合的四个插件
+// ezboot/wire.go
 var DefaultProviderSet = wire.NewSet(
-    tracing.NewOTELPlugin,
-    grpc.NewGRPCPlugin,
-    http.NewHTTPPlugin,
-    client.NewGRPCClientPlugin,
+    tracing.NewOTEL,
+    grpc.New,
+    http.New,
+    grpcclient.NewGRPCClient,
 )
 ```
 
@@ -301,29 +301,30 @@ func NewKafkaConsumer(cfg *KafkaConsumerConfig) *KafkaConsumer
 
 ```
 LoadFrameworkConfig()   env + viper + logger + strict decode + rewrite + custom
-InitGRPCClient(cfg)     （被 GRPCClient 插件取代）
-boot.Default()          保留为 deprecated 兼容壳，只做配置 + logger
+InitTelemetry()         OTEL（幂等）+ gRPC 客户端池配置
+Migrate()               自动迁移，由 Application 在插件启动前调用
 ```
 
-`infra.Open`、OTEL、migration 全部移出。
+`Default()` / `Server` / `Run` 已删除。`ProvideConfig` 负责 `LoadFrameworkConfig` + `InitTelemetry`：gRPC driver 在构造时读取拦截器列表，所以 tracing 必须早于 `grpc.New`。
 
 ### 8.2 wire
 
 ```go
 // 框架
 var DefaultProviderSet = wire.NewSet(
-    grpc.NewGRPCPlugin,
-    http.NewHTTPPlugin,
-    client.NewGRPCClientPlugin,
+    tracing.NewOTEL,
+    grpc.New,
+    http.New,
+    grpcclient.NewGRPCClient,
 )
 
 // 调用方
 func NewPlugins(
-    otel *tracing.OTELPlugin,
+    otel *tracing.OTEL,
     db *infra.MySQL,
-    gc *client.GRPCClientPlugin,
-    gs *grpc.GRPCPlugin,
-    hs *http.HTTPPlugin,
+    gc *grpcclient.GRPCClient,
+    gs *grpc.Server,
+    hs *http.Server,
 ) []ezboot.Plugin {
     // 顺序 = Close 的逆序依据：otel 最前 → 最后 flush
     return []ezboot.Plugin{otel, db, gc, gs, hs}
@@ -372,7 +373,7 @@ func (s *State) Ready() error {
 | Phase | 内容 | 可独立合入 |
 |---|---|---|
 | 1 | `plugin.go` + `state.go` + 单测 | 是 |
-| 2 | `internal/lifecycle` 状态机 + 假插件测试 | 是 |
+| 2 | `lifecycle.go` 状态机 + 假插件测试 | 是 |
 | 3 | 拆 `boot.Default()`；`LoadUserConfig` 去全局 | 否，与 4 一起 |
 | 4 | `infra` 六件插件化，删 `Set` / `boot.Infra` | 否，与 3 一起 |
 | 5 | `http` / `grpc` 插件化，`net.Listen` 移到 Start | 是 |
@@ -380,19 +381,21 @@ func (s *State) Ready() error {
 | 7 | template + chart 迁移 | 随 6 |
 | 8 | `OTEL` / `GRPCClient` 插件；metrics 集成进 grpc / http 插件；pprof 集成进 http 插件 | 是 |
 
-Phase 3 与 4 必须一起落地：`boot.Default()` 一旦不再 `infra.Open`，依赖它的 `ProvideRedis` / `ProvideRabbitMQ` / `Healthy` 就失去数据源。过渡期内这些函数改为返回 `ErrResourceUnavailable` 并打 deprecation 日志，Phase 4 完成后再删除。
+Phase 3 与 4 必须一起落地：`boot.Default()` 一旦不再 `infra.Open`，依赖它的 `ProvideRedis` / `ProvideRabbitMQ` / `Healthy` 就失去数据源。实现时这三者先退化为返回 `ErrResourceUnavailable`，Phase 8 已将它们删除。
 
-**进度**：Phase 1–6 已完成。
+**进度**：Phase 1–8 已完成。
 
 - Phase 1–2：`plugin.go`、`state.go`、`lifecycle.go`、`lifecycle_test.go`。
 - Phase 3：`boot.LoadFrameworkConfig()`，`LoadUserConfig` 不再触发 bootstrap。
 - Phase 4：`internal/gin-boot/infra` 迁到公共包 `infra`，`Set` 拆成六个插件；`boot.Infra`、`infra.Open`、`infra.Healthy` 删除。`with` 改为由 MySQL / Redis 插件注册默认句柄。
 - Phase 5：`http.Server` / `grpc.Server` 实现 `Plugin`；`net.Listen` 移到 `Start`；`http.New` 不再依赖 `boot.Default()`，自带 `NewEngine`；pprof 并入 HTTP 插件。
 - Phase 6：`Application` 改用 lifecycle；`boot.Migrate()` 在启动插件前执行；`boot.InitTelemetry()` 由 `ProvideConfig` 调用，保证 gRPC 拦截器早于 driver 构造。
+- Phase 8：`tracing.OTEL` 与 `grpc/client.GRPCClient` 插件；`ezboot.DefaultProviderSet`。
+- 清理：`boot.Default` / `Server` / `Run` 与 `internal/gin-boot/internal/cmd` 删除，`boot.go` 从 469 行降到 225 行。
 
 Kafka 的 broker 句柄类型从 `Kafka` 改名为 `KafkaBrokers`，`Kafka` 这个名字留给插件。
 
-**尚未删除**：`boot.Default()` / `boot.Server` / `Run` 这套旧编排已经没有任何调用方，但暂时保留以免一次性改动过大；Phase 8 之后可以整块删除。
+**已删除**：`boot.Default()` / `boot.Server` / `Run` / `DefaultServer` 整块旧编排，以及只服务它们的 `internal/gin-boot/internal/cmd`。
 
 **验收**
 
