@@ -11,14 +11,21 @@ import (
 
 	boot "github.com/ez4bk/ezboot/internal/gin-boot"
 	"github.com/ez4bk/ezboot/internal/gin-boot/config"
+	"github.com/ez4bk/ezboot/internal/gin-boot/util"
 	"github.com/ez4bk/ezboot/internal/logging"
 )
 
 // Config 配置别名
 type Config = config.Config
 
-// ProvideConfig 加载框架全局配置
+// ProvideConfig 加载框架全局配置。
+//
+// 它同时完成需要早于插件构造的初始化（tracing 拦截器、gRPC 客户端池），
+// 因为 gRPC driver 在构造时就会读取拦截器列表。
 func ProvideConfig() *Config {
+	util.ChkErr(boot.LoadFrameworkConfig())
+	util.ChkErr(boot.InitTelemetry())
+
 	return &boot.Config
 }
 

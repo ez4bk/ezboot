@@ -51,6 +51,12 @@ func InitListener(addr string) error {
 	return err
 }
 
+// SetConfig replaces the server options used by Create. Call it before
+// Create when a server needs settings different from the process default.
+func SetConfig(conf *conf_type.GRPCServer) {
+	confServer = conf
+}
+
 // InitServer InitServer
 func InitServer(conf *conf_type.GRPCServer) {
 	confServer = conf

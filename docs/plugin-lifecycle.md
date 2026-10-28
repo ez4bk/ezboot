@@ -164,13 +164,15 @@ ezboot/
 
 | 现有 | 变化 |
 |---|---|
-| `ezboot.WithHttpServer` / `WithGrpcServer` | 删除，改用 `WithPlugins` |
+| `ezboot.WithHttpServer` / `WithGrpcServer` | 标记 deprecated，内部转为插件注册；新代码用 `WithPlugins` |
 | `ezboot.Healthy` | 已废弃，恒返回 `ErrResourceUnavailable`；就绪状态改用 `ezboot.State` |
 | `ezboot.ProvideRedis` | 已废弃，恒返回 `ErrResourceUnavailable`；改用 `infra.Redis` 插件 |
 | `ezboot.ProvideRabbitMQ` / `RabbitMQClient` 等别名 | 删除，改用 `ezboot/infra` |
 | `Application.Start(ctx)` | 保留，内部改为运行 lifecycle |
-| `boot.Server.Run` / `DefaultServer` / `boot.Server` | 删除 |
+| `http.New` / `grpc.New` | 签名不变，但不再调用 `boot.Default()`；`net.Listen` 移到 `Start` |
 | `boot.Infra` / `infra.Set` / `infra.Default()` / `infra.Open` / `infra.Healthy` | 删除 |
+
+`http.Server` 与 `grpc.Server` **不 import 根包**：它们直接实现 5 个方法，靠 Go 的结构化接口满足 `ezboot.Plugin`。同理，`http.WithReadyChecker` 接受一个本地定义的 `interface{ Ready() error }`，由 `ezboot.State` 满足。这样两个传输包都不会与根包形成循环依赖。
 
 ### 6.1 插件清单
 
@@ -183,7 +185,7 @@ ezboot/
 | `Elasticsearch` | `infra` | 建 client → 阻塞 | Ping | — | 关闭 |
 | `Etcd` | `infra` | 建 client → 阻塞 | 探 endpoint | — | 关闭 |
 | `HTTP` | `http` | `ListenAndServe`（pprof 独立端口时同时 Serve） | listener 已绑定 | `Shutdown`（含 pprof 监听） | — |
-| `GRPC` | `grpc` | 注册 + `Serve` | listener 已绑定 | `GracefulStop`（超时后 `Stop`） | — |
+| `GRPC` | `grpc` | 注册 + `Serve` | listener 已绑定且 gateway 就绪 | `GracefulStop`（超时后 `Stop`） | — |
 | `GRPCClient` | `grpc/client` | 载入 client 配置 → 阻塞 | — | — | `CloseClients` |
 | `OTEL` | `tracing` | 构造期初始化 provider、注册拦截器；Start 阻塞 | — | — | `tp.Shutdown`（flush） |
 
@@ -380,13 +382,17 @@ func (s *State) Ready() error {
 
 Phase 3 与 4 必须一起落地：`boot.Default()` 一旦不再 `infra.Open`，依赖它的 `ProvideRedis` / `ProvideRabbitMQ` / `Healthy` 就失去数据源。过渡期内这些函数改为返回 `ErrResourceUnavailable` 并打 deprecation 日志，Phase 4 完成后再删除。
 
-**进度**：Phase 1–4 已完成。
+**进度**：Phase 1–6 已完成。
 
 - Phase 1–2：`plugin.go`、`state.go`、`lifecycle.go`、`lifecycle_test.go`。
 - Phase 3：`boot.LoadFrameworkConfig()`，`LoadUserConfig` 不再触发 bootstrap。
 - Phase 4：`internal/gin-boot/infra` 迁到公共包 `infra`，`Set` 拆成六个插件；`boot.Infra`、`infra.Open`、`infra.Healthy` 删除。`with` 改为由 MySQL / Redis 插件注册默认句柄。
+- Phase 5：`http.Server` / `grpc.Server` 实现 `Plugin`；`net.Listen` 移到 `Start`；`http.New` 不再依赖 `boot.Default()`，自带 `NewEngine`；pprof 并入 HTTP 插件。
+- Phase 6：`Application` 改用 lifecycle；`boot.Migrate()` 在启动插件前执行；`boot.InitTelemetry()` 由 `ProvideConfig` 调用，保证 gRPC 拦截器早于 driver 构造。
 
 Kafka 的 broker 句柄类型从 `Kafka` 改名为 `KafkaBrokers`，`Kafka` 这个名字留给插件。
+
+**尚未删除**：`boot.Default()` / `boot.Server` / `Run` 这套旧编排已经没有任何调用方，但暂时保留以免一次性改动过大；Phase 8 之后可以整块删除。
 
 **验收**
 

@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -16,6 +17,22 @@ const (
 
 // ReadyFunc 判断当前实例是否可以接收流量。
 type ReadyFunc func(ctx context.Context) error
+
+// ReadyChecker 是 ezboot.State 的结构化接口。这样 http 包不需要
+// import 根包，也就不会形成循环依赖。
+type ReadyChecker interface {
+	Ready() error
+}
+
+// WithReadyChecker 用 ezboot.State 作为就绪判断来源。
+func WithReadyChecker(rc ReadyChecker) ServerOption {
+	return func(s *Server) error {
+		if rc == nil {
+			return errors.New("http: ready checker is nil")
+		}
+		return WithReady(func(context.Context) error { return rc.Ready() })(s)
+	}
+}
 
 // healthyOK 健康检查的结果
 var healthyOK struct {

@@ -10,6 +10,8 @@ var (
 	ErrNotStarted = errors.New("ezboot: not started")
 	// ErrDraining 表示应用正在排空，不应接收新流量。
 	ErrDraining = errors.New("ezboot: draining")
+	// ErrNilState 表示调用方传入了一个 nil 的就绪状态对象。
+	ErrNilState = errors.New("ezboot: state is nil")
 )
 
 // State 是就绪状态的唯一数据源：由 lifecycle 写入，由就绪端点读取。

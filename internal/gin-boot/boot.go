@@ -189,6 +189,39 @@ func LoadFrameworkConfig() error {
 	return nil
 }
 
+var (
+	telemetryOnce sync.Once
+	telemetryErr  error
+)
+
+// InitTelemetry 初始化 tracing 与 gRPC 客户端池。它必须在任何 gRPC
+// server 构造之前调用：driver 在构造时读取拦截器列表。
+func InitTelemetry() error {
+	telemetryOnce.Do(func() {
+		if _, err := middleware.InitOTEL(config.Conf); err != nil {
+			telemetryErr = err
+			return
+		}
+		initGRPCClient()
+	})
+
+	return telemetryErr
+}
+
+var (
+	migrateOnce sync.Once
+	migrateErr  error
+)
+
+// Migrate 执行数据库自动迁移。Application 在启动插件之前调用它。
+func Migrate() error {
+	migrateOnce.Do(func() {
+		migrateErr = doMigration()
+	})
+
+	return migrateErr
+}
+
 // Default Default
 func Default() *Server {
 	defer Recovery()
@@ -207,19 +240,13 @@ func Default() *Server {
 		util.ChkErr(err)
 	}
 
-	if err := doMigration(); err != nil {
+	if err := Migrate(); err != nil {
 		util.ChkErr(err)
 	}
 
-	// infrastructure is owned by plugins now; the composition root opens it.
-	tracerProvider, err := middleware.InitOTEL(config.Conf)
-	if err != nil {
+	if err := InitTelemetry(); err != nil {
 		util.ChkErr(err)
 	}
-	_ = tracerProvider
-
-	// initGRPCClient
-	initGRPCClient()
 
 	// init gin mode
 	gin.SetMode(env.GinMode(env.Env.Mode))
