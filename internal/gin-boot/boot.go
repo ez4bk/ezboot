@@ -81,7 +81,10 @@ func DefaultServer(_configPath, _customLogLevel string) *Server {
 	return Default()
 }
 
-func LoadConfigAndLogger() error {
+// LoadFrameworkConfig 是启动流程的第一阶段：导入环境、读取配置文件、
+// 初始化日志。它不打开任何资源，也不做数据库迁移，因此可以在构造任何
+// 插件之前单独调用。
+func LoadFrameworkConfig() error {
 	if configLoaded {
 		return nil
 	}
@@ -201,7 +204,7 @@ func Default() *Server {
 		return server
 	}
 
-	if err := LoadConfigAndLogger(); err != nil {
+	if err := LoadFrameworkConfig(); err != nil {
 		util.ChkErr(err)
 	}
 

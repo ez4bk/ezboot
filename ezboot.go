@@ -64,8 +64,11 @@ func Healthy(ctx context.Context) error {
 
 // LoadUserConfig 加载用户配置
 func LoadUserConfig(cfg any) error {
-	// ensure env initialized
-	_ = boot.Default()
+	// ensure the config files and viper are initialized; this must not open
+	// any infrastructure resource
+	if err := boot.LoadFrameworkConfig(); err != nil {
+		return err
+	}
 
 	return viper.Unmarshal(cfg, func(config *mapstructure.DecoderConfig) {
 		config.TagName = "yaml"
