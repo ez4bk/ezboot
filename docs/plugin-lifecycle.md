@@ -192,8 +192,11 @@ ezboot/
 ### 6.2 默认组合
 
 ```go
-// ezboot/wire.go —— 只装“无需定制、恒定启用”的插件
-var DefaultProviderSet = wire.NewSet(
+// ezboot/wire.go —— 只装“无需定制、恒定启用”的依赖与插件
+var ProviderSet = wire.NewSet(
+    ProvideConfig,
+    ProvideLogger,
+    NewState,
     tracing.NewOTEL,
     grpcclient.NewGRPCClient,
 )
@@ -311,7 +314,10 @@ Migrate()               自动迁移，由 Application 在插件启动前调用
 
 ```go
 // 框架
-var DefaultProviderSet = wire.NewSet(
+var ProviderSet = wire.NewSet(
+    ProvideConfig,
+    ProvideLogger,
+    NewState,
     tracing.NewOTEL,
     grpcclient.NewGRPCClient,
 )
@@ -389,7 +395,7 @@ Phase 3 与 4 必须一起落地：`boot.Default()` 一旦不再 `infra.Open`，
 - Phase 5：`http.Server` / `grpc.Server` 实现 `Plugin`；`net.Listen` 移到 `Start`；`http.New` 不再依赖 `boot.Default()`，自带 `NewEngine`；pprof 并入 HTTP 插件。
 - Phase 6：`Application` 改用 lifecycle；`boot.Migrate()` 在启动插件前执行；`boot.InitTelemetry()` 由 `ProvideConfig` 调用，保证 gRPC 拦截器早于 driver 构造。
 - Phase 7：template 迁移 —— `NewPlugins` 收口 `[]ezboot.Plugin`、`ezboot.State` 接入 `/readyz`、MySQL 插件、chart 的 `terminationGracePeriodSeconds` 与 readiness 探针。
-- Phase 8：`tracing.OTEL` 与 `grpc/client.GRPCClient` 插件；`ezboot.DefaultProviderSet`；metrics 集成进 http / grpc。
+- Phase 8：`tracing.OTEL` 与 `grpc/client.GRPCClient` 插件；metrics 集成进 http / grpc。
 - 清理：`boot.Default` / `Server` / `Run` 与 `internal/gin-boot/internal/cmd` 删除，`boot.go` 从 469 行降到 225 行。
 
 Kafka 的 broker 句柄类型从 `Kafka` 改名为 `KafkaBrokers`，`Kafka` 这个名字留给插件。
