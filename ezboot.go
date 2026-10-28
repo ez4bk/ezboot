@@ -28,8 +28,11 @@ func ProvideConfig() *Config {
 // Logger 日志实现的别名
 type Logger = zap.SugaredLogger
 
-// ProvideLogger 加载日志记录器
+// ProvideLogger 加载日志记录器。它先确保配置已加载，因此和
+// ProvideConfig 之间没有隐式的构造顺序要求。
 func ProvideLogger() *Logger {
+	util.ChkErr(boot.LoadFrameworkConfig())
+
 	// log.With(app, xxx)
 	return logging.Default()
 }

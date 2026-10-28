@@ -2,6 +2,7 @@ package ezboot
 
 import (
 	"context"
+	"errors"
 	"os"
 	"time"
 
@@ -95,6 +96,28 @@ func WithState(state *State) ApplicationOption {
 func WithPluginTimeouts(ready, drain, close time.Duration) ApplicationOption {
 	return func(app *Application) error {
 		app.timeouts = timeouts{ready: ready, drain: drain, close: close}
+		return nil
+	}
+}
+
+// ErrNilConfig 表示调用方传入了一个 nil 的框架配置。
+var ErrNilConfig = errors.New("ezboot: config is nil")
+
+// WithLifecycleConfig 从框架配置读取生命周期各阶段的预算
+// （app.lifecycle.*），零值使用默认值。
+func WithLifecycleConfig(cfg *Config) ApplicationOption {
+	return func(app *Application) error {
+		if cfg == nil {
+			return ErrNilConfig
+		}
+
+		l := cfg.App.Lifecycle
+		app.timeouts = timeouts{
+			ready: l.ReadyTimeout.Duration,
+			drain: l.DrainTimeout.Duration,
+			close: l.CloseTimeout.Duration,
+		}
+
 		return nil
 	}
 }

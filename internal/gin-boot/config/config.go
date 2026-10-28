@@ -36,6 +36,8 @@ type Config struct {
 			AutoMigrate bool `yaml:"auto_migrate"`
 		} `yaml:"db_migration"`
 
+		Lifecycle conf_type.Lifecycle `yaml:"lifecycle"`
+
 		Middleware struct {
 			Logger  conf_type.Logger
 			HTTP    conf_type.HTTP
