@@ -17,13 +17,15 @@ import (
 )
 
 var (
-	dsn  string
-	mock bool
+	dsn         string
+	mock        bool
+	withDefault bool
 )
 
 func init() {
 	flag.StringVar(&dsn, "dsn", "", "connection string of the database")
 	flag.BoolVar(&mock, "mock", true, "render an offline mock table instead of reading the database")
+	flag.BoolVar(&withDefault, "with-default", true, "use with package for default redis and session")
 	flag.Parse()
 
 	if envDsn := os.Getenv("MYSQL_DSN"); len(envDsn) != 0 {
@@ -116,6 +118,8 @@ func main() {
 		//		daoOptions = append(daoOptions, reflect.WithDAOListConstraintRequire(column.Name))
 		//	}
 		// }
+
+		daoOptions = append(daoOptions, reflect.WithDAOWithDefault(withDefault))
 
 		err = r.Render(table, os.Stdout,
 			reflect.WithFieldTagMapper(reflect.JsonTagMapper()),
