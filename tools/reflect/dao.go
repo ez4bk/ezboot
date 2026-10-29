@@ -24,6 +24,7 @@ var (
 	idErrorNew             = &QualifiedIdentifier{Import: "errors", Identifier: "New"}
 	idContext              = &QualifiedIdentifier{Import: "context", Identifier: "Context"}
 	idXormSession          = &QualifiedIdentifier{Import: "xorm.io/xorm", Identifier: "Session"}
+	idXormEngine           = &QualifiedIdentifier{Import: "xorm.io/xorm", Identifier: "Engine"}
 	idEZBootLogger         = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot", Identifier: "Logger"}
 	idWithSession          = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/with", Identifier: "DefaultSession"}
 	idWithRedis            = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/with", Identifier: "DefaultRedis"}
@@ -62,6 +63,10 @@ type daoRender struct {
 	useCache     bool
 	cachePrefix  string
 	cacheExpired time.Duration
+
+	// withDefault 为 true 时通过 with 包取默认会话与缓存；
+	// 为 false 时由构造器注入 *xorm.Engine 和 *redis.Client。
+	withDefault bool
 }
 
 // Render 将数据访问层的东西渲染到 w 中
@@ -77,6 +82,12 @@ func (r *daoRender) Render(w io.Writer) error {
 	g.Commentf("%s manage the %s model", typename, r.table.Name)
 	g.Type().Id(typename).StructFunc(func(gp *jen.Group) {
 		gp.Id("log").Op("*").Qual(idEZBootLogger.Import, idEZBootLogger.Identifier)
+		if !r.withDefault {
+			gp.Id(vDb).Op("*").Qual(idXormEngine.Import, idXormEngine.Identifier)
+			if r.useCache {
+				gp.Id("cache").Op("*").Qual(idRedisClient.Import, idRedisClient.Identifier)
+			}
+		}
 	})
 
 	namedPtrTypename := jen.Id("dao").Op("*").Id(typename)
@@ -92,14 +103,20 @@ func (r *daoRender) Render(w io.Writer) error {
 		r.DestroyMethod(g, namedPtrTypename)
 	}
 
+	if !r.withDefault {
+		r.SessionHelper(g, namedPtrTypename)
+	}
+
 	r.Constructor(g, typename, jen.Op("*").Id(typename))
 
 	r.jenImportPkg(g, idErrorNew)
 	r.jenImportPkg(g, idContext)
 	r.jenImportPkg(g, idXormSession)
 	r.jenImportPkg(g, idEZBootLogger)
-	r.jenImportPkg(g, idWithSession)
-	r.jenImportPkg(g, idWithRedis)
+	if r.withDefault {
+		r.jenImportPkg(g, idWithSession)
+		r.jenImportPkg(g, idWithRedis)
+	}
 	r.jenImportPkg(g, idLogWarn)
 	r.jenImportPkg(g, idEXormPager)
 	r.jenImportPkg(g, idEXormNew)
@@ -133,24 +150,36 @@ func (r *daoRender) GetMethod(g *jen.File, pTypename *jen.Statement) {
 		// 如果启用了缓存，就先从缓存中读取
 		if r.useCache {
 			op = "="
-			gp.Var().Id("data").Index().Byte()
-			gp.Err().Op(":=").Add(idWithRedis.AsCode()).CallFunc(func(gp *jen.Group) {
-				gp.Id(vCtx).Op(",").
-					Func().Params(jen.Id("cache").Op("*").Add(idRedisClient.AsCode())).Error().
-					Block(
-						jen.Var().Id("cacheErr").Error(),
-						jen.Id("data").Op(",").Id("cacheErr").Op("=").
-							Id("cache").Dot("Get").Call(r.jenModelIdCreateKey(false)).Dot("Bytes").Call(),
-						jen.Return(jen.Id("cacheErr")),
-					)
-			})
-			gp.If(jen.Err().Op("==").Nil()).Block(
-				jen.Err().Op("=").Qual(idJsonUnmarshal.Import, idJsonUnmarshal.Identifier).Call(jen.Id("data"), modelPtr),
-				jen.If(jen.Err().Op("==").Nil()).Block(
-					jen.Return(modelPtr.Clone().Op(",").Nil()),
-				),
-			)
-			gp.Line()
+
+			if !r.withDefault {
+				gp.Id("data").Op(",").Err().Op(":=").Id("dao").Dot("cache").Dot("Get").Call(r.jenModelIdCreateKey(false)).Dot("Bytes").Call()
+				gp.If(jen.Err().Op("==").Nil()).Block(
+					jen.Err().Op("=").Qual(idJsonUnmarshal.Import, idJsonUnmarshal.Identifier).Call(jen.Id("data"), modelPtr),
+					jen.If(jen.Err().Op("==").Nil()).Block(
+						jen.Return(modelPtr.Clone().Op(",").Nil()),
+					),
+				)
+				gp.Line()
+			} else {
+				gp.Var().Id("data").Index().Byte()
+				gp.Err().Op(":=").Add(idWithRedis.AsCode()).CallFunc(func(gp *jen.Group) {
+					gp.Id(vCtx).Op(",").
+						Func().Params(jen.Id("cache").Op("*").Add(idRedisClient.AsCode())).Error().
+						Block(
+							jen.Var().Id("cacheErr").Error(),
+							jen.Id("data").Op(",").Id("cacheErr").Op("=").
+								Id("cache").Dot("Get").Call(r.jenModelIdCreateKey(false)).Dot("Bytes").Call(),
+							jen.Return(jen.Id("cacheErr")),
+						)
+				})
+				gp.If(jen.Err().Op("==").Nil()).Block(
+					jen.Err().Op("=").Qual(idJsonUnmarshal.Import, idJsonUnmarshal.Identifier).Call(jen.Id("data"), modelPtr),
+					jen.If(jen.Err().Op("==").Nil()).Block(
+						jen.Return(modelPtr.Clone().Op(",").Nil()),
+					),
+				)
+				gp.Line()
+			}
 		}
 
 		r.jenWithDefaultSession(gp, func(gp *jen.Group) {
@@ -188,6 +217,18 @@ func (r *daoRender) GetMethod(g *jen.File, pTypename *jen.Statement) {
 		if r.useCache {
 			gp.Line().Id("value").Op(",").Err().Op(":=").Qual(idJsonMarshal.Import, idJsonMarshal.Identifier).Call(jen.Id("model"))
 			gp.If(jen.Err().Op("==").Nil()).BlockFunc(func(gp *jen.Group) {
+				if !r.withDefault {
+					gp.Err().Op("=").Id("dao").Dot("cache").Dot("Set").Call(
+						r.jenModelIdCreateKey(false),
+						jen.Id("string").Call(jen.Id("value")),
+						jen.Qual(idTimeDuration.Import, idTimeDuration.Identifier).Call(jen.Id(strconv.FormatInt(int64(r.cacheExpired), 10))),
+					).Dot("Err").Call()
+					gp.If(jen.Err().Op("!=").Nil()).Block(
+						jen.Id("dao").Dot("log").Dot("Warnw").Call(jen.Lit("failed to set redis cache"), jen.Lit("error"), jen.Err()),
+					)
+					return
+				}
+
 				gp.Err().Op("=").Add(idWithRedis.AsCode()).CallFunc(func(gp *jen.Group) {
 					gp.Id(vCtx).Op(",").
 						Func().Params(jen.Id("cache").Op("*").Add(idRedisClient.AsCode())).Error().
@@ -507,12 +548,24 @@ func (r *daoRender) Constructor(g *jen.File, typename string, pTypename *jen.Sta
 	funcName := r.constructorNameMapper.Mapping(typename)
 	outParams := jen.List(pTypename, jen.Error())
 	inParams := jen.Id("log").Op("*").Add(idEZBootLogger.AsCode())
+	if !r.withDefault {
+		inParams = jen.List(inParams, jen.Id(vDb).Op("*").Add(idXormEngine.AsCode()))
+		if r.useCache {
+			inParams = jen.List(inParams, jen.Id("cache").Op("*").Add(idRedisClient.AsCode()))
+		}
+	}
 	loggerWith := jen.List(r.jenLiterals("component", "dao", "dao", r.table.Name)...)
 
 	g.Func().Id(funcName).Params(inParams).Params(outParams).BlockFunc(func(gp *jen.Group) {
 		gp.ReturnFunc(func(gp *jen.Group) {
 			gp.ListFunc(func(gp *jen.Group) {
 				jd := jen.Dict{jen.Id("log"): jen.Id("log").Dot("With").Call(loggerWith)}
+				if !r.withDefault {
+					jd[jen.Id(vDb)] = jen.Id(vDb)
+					if r.useCache {
+						jd[jen.Id("cache")] = jen.Id("cache")
+					}
+				}
 
 				gp.Op("&").Id(typename).Values(jd) // dao
 				gp.Nil()                           // error
@@ -549,10 +602,31 @@ func (r *daoRender) jenIfErrNotNil(gp *jen.Group, f func(*jen.Group)) *jen.Group
 
 // jenWithDefaultSession 开启一个 xorm.Session 会话
 func (r *daoRender) jenWithDefaultSession(gp *jen.Group, f func(*jen.Group), op string) *jen.Group {
-	gp.Err().Op(op).Add(idWithSession.AsCode()).CallFunc(func(gp *jen.Group) {
+	if r.withDefault {
+		gp.Err().Op(op).Add(idWithSession.AsCode()).CallFunc(func(gp *jen.Group) {
+			gp.Id(vCtx).Op(",").Func().Params(namedXormSession).Error().BlockFunc(f)
+		}) // with.DefaultSession
+		return gp
+	}
+
+	gp.Err().Op(op).Id("dao").Dot("withSession").CallFunc(func(gp *jen.Group) {
 		gp.Id(vCtx).Op(",").Func().Params(namedXormSession).Error().BlockFunc(f)
-	}) // with.DefaultSession
+	})
 	return gp
+}
+
+// SessionHelper 生成一个基于注入 engine 的会话辅助方法
+func (r *daoRender) SessionHelper(g *jen.File, pTypename *jen.Statement) {
+	g.Comment("withSession opens a session on the injected engine")
+	g.Func().Params(pTypename).Id("withSession").Params(
+		namedContext,
+		jen.Id("f").Func().Params(namedXormSession).Error(),
+	).Error().Block(
+		jen.Id(vDb).Op(":=").Id("dao").Dot(vDb).Dot("Context").Call(jen.Id(vCtx)),
+		jen.Defer().Id(vDb).Dot("Close").Call(),
+		jen.Return(jen.Id("f").Call(jen.Id(vDb))),
+	)
+	g.Line()
 }
 
 // jenReturnErrWrap 返回一个错误和日志
@@ -568,6 +642,13 @@ func (r *daoRender) jenReturnErrWrap(gp *jen.Group, msg string, args ...any) *je
 // jenDeleteCache 删除redis缓存
 func (r *daoRender) jenDeleteCache(gp *jen.Group, member bool) *jen.Group {
 	gp.Line()
+	if !r.withDefault {
+		gp.Err().Op("=").Id("dao").Dot("cache").Dot("Del").Call(r.jenModelIdCreateKey(member)).Dot("Err").Call()
+		r.jenErrNotNilLogRedisError(gp, "failed to delete redis cache")
+		gp.Line()
+		return gp
+	}
+
 	gp.Err().Op("=").Add(idWithRedis.AsCode()).CallFunc(func(gp *jen.Group) {
 		gp.Id(vCtx).Op(",").
 			Func().Params(jen.Id("cache").Op("*").Add(idRedisClient.AsCode())).Error().
@@ -649,7 +730,8 @@ func newDAORender(r *render, options ...DAORenderOption) (*daoRender, error) {
 		structNameMapper:      DefaultDAOStructNameMapper(),
 		constructorNameMapper: DefaultDAOConstructorNameMapper(),
 
-		pagerType: PagerTypeIndex,
+		pagerType:   PagerTypeIndex,
+		withDefault: true,
 	}
 
 	for _, option := range options {
@@ -679,6 +761,15 @@ func WithDAOPkgPath(path string) DAORenderOption {
 
 // DAORenderOption 数据访问层渲染器配置选项
 type DAORenderOption func(*daoRender) error
+
+// WithDAOWithDefault 控制 DAO 是否通过 with 包取默认会话与缓存。
+// 为 false 时改为在构造器注入 *xorm.Engine 和 *redis.Client。
+func WithDAOWithDefault(v bool) DAORenderOption {
+	return func(r *daoRender) error {
+		r.withDefault = v
+		return nil
+	}
+}
 
 // WithDAOStructNameMapper 数据访问层的结构体名称
 func WithDAOStructNameMapper(mapper StringMapper) DAORenderOption {
