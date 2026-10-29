@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	const version = "v0.5.0"
+	const version = "v0.5.1"
 
 	root := &cobra.Command{
 		Use:           "ezboot",
