@@ -106,9 +106,6 @@ func TestMySQLExposesTheEnginePool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMySQL() = %v", err)
 	}
-	if err := p.open(cfg, logging.Default()); err != nil {
-		t.Fatalf("open() = %v", err)
-	}
 	t.Cleanup(func() {
 		if err := p.Close(context.Background()); err != nil {
 			t.Errorf("Close() = %v", err)
@@ -181,5 +178,43 @@ func TestResourceErrorMatchesSentinelAndCause(t *testing.T) {
 	}
 	if err.Error() == "" {
 		t.Fatal("ResourceError.Error() is empty")
+	}
+}
+
+func TestDefaultProviders(t *testing.T) {
+	cfg := &config.Config{}
+	cfg.App.Middleware.Mysql = conf_type.Mysqls{
+		"default": {Startup: true, Dsn: "user:pass@tcp(127.0.0.1:1)/test"},
+	}
+	cfg.App.Middleware.Redis = conf_type.Redises{
+		"default": {Startup: true, Addr: "127.0.0.1:6379"},
+	}
+
+	mysql, err := NewMySQL(cfg, logging.Default())
+	if err != nil {
+		t.Fatalf("NewMySQL: %v", err)
+	}
+	t.Cleanup(func() { _ = mysql.Close(context.Background()) })
+
+	engine, err := ProvideDefaultMySQL(mysql)
+	if err != nil {
+		t.Fatalf("ProvideDefaultMySQL: %v", err)
+	}
+	if engine == nil {
+		t.Fatal("ProvideDefaultMySQL returned a nil engine")
+	}
+
+	redisPlugin, err := NewRedis(cfg)
+	if err != nil {
+		t.Fatalf("NewRedis: %v", err)
+	}
+	t.Cleanup(func() { _ = redisPlugin.Close(context.Background()) })
+
+	client, err := ProvideDefaultRedis(redisPlugin)
+	if err != nil {
+		t.Fatalf("ProvideDefaultRedis: %v", err)
+	}
+	if client == nil {
+		t.Fatal("ProvideDefaultRedis returned a nil client")
 	}
 }

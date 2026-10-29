@@ -9,7 +9,11 @@ import (
 
 	"github.com/go-redis/redis"
 
+	"github.com/ez4bk/ezboot"
 	conftype "github.com/ez4bk/ezboot/internal/gin-boot/conf_type"
+	"github.com/ez4bk/ezboot/with"
+	"github.com/google/wire"
+
 	"github.com/ez4bk/ezboot/internal/gin-boot/config"
 )
 
@@ -181,4 +185,64 @@ func redisOptions(opt *conftype.Redis) *redis.Options {
 		redisOptions.IdleCheckFrequency = opt.IdleCheckFrequency * time.Millisecond
 	}
 	return redisOptions
+}
+
+// Redis 是 Redis 插件。客户端在构造期创建，Start 只注册默认实例并阻塞。
+type Redis struct {
+	ezboot.PluginBase
+
+	conf *config.Config
+	redisClients
+}
+
+// RedisProviderSet 提供 Redis 插件，以及 default 实例的客户端。
+var RedisProviderSet = wire.NewSet(NewRedis, ProvideDefaultRedis)
+
+// NewRedis 创建插件并建立客户端。go-redis 的客户端是懒连接的，这里
+// 不产生网络 I/O。
+func NewRedis(cfg *config.Config) (*Redis, error) {
+	if cfg == nil {
+		return nil, errors.New("infra: redis requires a config")
+	}
+	if len(cfg.App.Middleware.Redis) == 0 {
+		return nil, errors.New("infra: redis plugin is enabled but no instance is configured")
+	}
+
+	r := &Redis{conf: cfg}
+	if err := r.open(cfg); err != nil {
+		return nil, err
+	}
+
+	return r, nil
+}
+
+// Name 返回插件名。
+func (r *Redis) Name() string { return "redis" }
+
+// Start 注册默认 Redis 并阻塞到 ctx 结束。
+func (r *Redis) Start(ctx context.Context) error {
+	if client, err := r.get(defaultName); err == nil {
+		with.SetDefaultRedis(client)
+	}
+
+	<-ctx.Done()
+	return nil
+}
+
+// Ready 对已配置的 Redis 实例做一次 Ping。
+func (r *Redis) Ready(ctx context.Context) error {
+	return errors.Join(r.healthy(ctx)...)
+}
+
+// Close 关闭所有客户端。
+func (r *Redis) Close(context.Context) error {
+	if r == nil {
+		return nil
+	}
+	return r.close()
+}
+
+// ProvideDefaultRedis 提供 default 实例的客户端。
+func ProvideDefaultRedis(r *Redis) (*redis.Client, error) {
+	return r.Redis(defaultName)
 }

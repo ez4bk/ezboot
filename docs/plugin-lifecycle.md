@@ -72,7 +72,7 @@ func (PluginBase) Close(context.Context) error { return nil }
 
 - 阻塞直到插件停止。**覆盖 `Start` 必须自己写 `<-ctx.Done()`**，否则会被判定为"刚启动就退出"。
 - 返回 `nil` 表示正常停止，返回 error 表示故障。
-- I/O 一律放在 `Start`，构造函数只做配置校验。
+- 构造函数可以**创建客户端对象**（`redis.NewClient`、`xorm.NewEngine`、`elasticsearch.NewClient`），但不得做网络 I/O、不得绑定端口。连接由 `Ready` 验证；需要后台循环的插件（RabbitMQ）在 `Start` 启动它。
 
 `Ready`
 
@@ -178,12 +178,12 @@ ezboot/
 
 | 插件 | 包 | `Start` | `Ready` | `Drain` | `Close` |
 |---|---|---|---|---|---|
-| `MySQL` | `infra` | 开 pool → 阻塞 | Ping default | — | 关 pool |
-| `Redis` | `infra` | 建 client → 阻塞 | Ping | — | 关闭 |
-| `Kafka` | `infra` | 建 reader/writer 容器 → 阻塞 | 探 broker | — | 关 reader/writer |
-| `RabbitMQ` | `infra` | 建连接 → 阻塞 | 探 channel | — | 关闭 |
-| `Elasticsearch` | `infra` | 建 client → 阻塞 | Ping | — | 关闭 |
-| `Etcd` | `infra` | 建 client → 阻塞 | 探 endpoint | — | 关闭 |
+| `MySQL` | `infra/db.go` | 构造期建 pool；Start 注册 default → 阻塞 | Ping default | — | 关 pool |
+| `Redis` | `infra/redis.go` | 构造期建 client；Start 注册 default → 阻塞 | Ping | — | 关闭 |
+| `Kafka` | `infra/kafka.go` | 构造期记录 broker；Start 阻塞 | 探 broker | — | 关闭 |
+| `RabbitMQ` | `infra/rabbitmq.go` | 构造期建对象；Start 启动重连 → 阻塞 | 探 channel | — | 关闭 |
+| `Elasticsearch` | `infra/es_search.go` | 构造期建 client；Start 阻塞 | Ping | — | 关闭 |
+| `Etcd` | `infra/etcd.go` | 构造期建 client；Start 阻塞 | 探 endpoint | — | 关闭 |
 | `HTTP` | `http` | `ListenAndServe`（pprof 独立端口时同时 Serve） | listener 已绑定 | `Shutdown`（含 pprof 监听） | — |
 | `GRPC` | `grpc` | 注册 + `Serve` | listener 已绑定且 gateway 就绪 | `GracefulStop`（超时后 `Stop`） | — |
 | `GRPCClient` | `grpc/client` | 载入 client 配置 → 阻塞 | — | — | `CloseClients` |
@@ -208,7 +208,49 @@ infra 插件**不在**默认组合中：只用 HTTP 的服务不应该因为引�
 
 OTEL 插件虽然恒在默认组合里，但**实际是否启用由配置决定**：`app.middleware.tracing.startup: false`（零值）时构造函数什么都不做（与今天 `InitOTEL` 返回 `nil` 一致），`Close` 也是空操作。这和 `grpc.client` 配置为空时 `GRPCClient` 插件空转是同一种模式。
 
-### 6.3 什么不是插件
+### 6.3 ProviderSet 与原生类型
+
+每个 infra 插件都和自己的文件放在一起，文件里同时提供插件类型、构造函数、生命周期方法和 `ProviderSet`——没有集中的 `plugin.go`。
+
+```go
+// infra/redis.go
+var RedisProviderSet = wire.NewSet(NewRedis, ProvideDefaultRedis)
+
+func ProvideDefaultRedis(r *Redis) (*redis.Client, error) {
+    return r.Redis(defaultName)
+}
+```
+
+调用方 wire 只放一个 set，业务代码拿到的就是原生类型：
+
+```go
+wire.Build(
+    ezboot.ProviderSet,
+    infra.RedisProviderSet,   // *infra.Redis + *redis.Client
+    // ...
+)
+
+func NewExampleDAO(log *ezboot.Logger, cache *redis.Client) (*ExampleDAO, error)
+```
+
+| ProviderSet | 包含 | default provider |
+|---|---|---|
+| `infra.MySQLProviderSet` | `NewMySQL` + `ProvideDefaultMySQL`（`*xorm.Engine`） | 有 |
+| `infra.RedisProviderSet` | `NewRedis` + `ProvideDefaultRedis`（`*redis.Client`） | 有 |
+| `infra.ElasticsearchProviderSet` | `NewElasticsearch` + `ProvideDefaultElasticsearch`（`*elasticsearch.Client`） | 有 |
+| `infra.EtcdProviderSet` | `NewEtcd` + `ProvideDefaultEtcd`（`*clientv3.Client`） | 有 |
+| `infra.KafkaProviderSet` | `NewKafka` | 无（reader/writer 按 topic 创建） |
+| `infra.RabbitMQProviderSet` | `NewRabbitMQ` | 无（publisher/consumer 按名字使用） |
+
+非 default 实例由调用方自己写一个两行 provider：
+
+```go
+func ProvideMiscRedis(r *infra.Redis) (*redis.Client, error) { return r.Redis("misc") }
+```
+
+句柄在构造期就存在，因此在 wire 里可以直接注入；但**不就绪**——`Ready` 通过之前不保证连得上，流量由 `/readyz` 把关。
+
+### 6.4 什么不是插件
 
 判断标准只有一条：**有没有运行期生命周期**。只有构造期动作、没有 Start/Ready/Drain/Close 语义的东西，做成插件只会得到一个需要被 `[]Plugin` 收口才不会被 wire 裁掉的空壳。
 
@@ -245,7 +287,7 @@ app:
       metric: "/metrics"
 ```
 
-### 6.4 共享值
+### 6.5 共享值
 
 有两个值不属于任何插件，但需要被多个插件注入，因此作为独立 provider：
 

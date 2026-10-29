@@ -9,7 +9,10 @@ import (
 
 	amqp "github.com/rabbitmq/amqp091-go"
 
+	"github.com/ez4bk/ezboot"
 	conftype "github.com/ez4bk/ezboot/internal/gin-boot/conf_type"
+	"github.com/google/wire"
+
 	"github.com/ez4bk/ezboot/internal/gin-boot/config"
 	"github.com/ez4bk/ezboot/internal/logging"
 )
@@ -37,10 +40,10 @@ func (r *rabbitMQ) open(cfg *config.Config, logger *logging.Logger) error {
 		Consumers:  make(map[string]*RabbitMQConsumer),
 	}
 	for _, publisher := range conf.Publishers {
-		client.Publishers[publisher.Name] = NewRabbitMQPublisher(logger, conf.Url, publisher.Exchange)
+		client.Publishers[publisher.Name] = newRabbitMQPublisher(logger, conf.Url, publisher.Exchange, false)
 	}
 	for _, consumer := range conf.Consumers {
-		client.Consumers[consumer.Name] = NewRabbitMQConsumer(logger, conf.Url, consumer.Exchange, consumer.Queue)
+		client.Consumers[consumer.Name] = newRabbitMQConsumer(logger, conf.Url, consumer.Exchange, consumer.Queue, false)
 	}
 
 	r.mu.Lock()
@@ -101,6 +104,19 @@ func (s *RabbitMQ) RabbitMQ() (*RabbitMQClient, error) {
 		return nil, resourceError("rabbitmq", defaultName, nil)
 	}
 	return s.rabbitMQ.get()
+}
+
+// start launches the reconnect loop of every publisher and consumer.
+func (r *RabbitMQClient) start() {
+	if r == nil {
+		return
+	}
+	for _, publisher := range r.Publishers {
+		publisher.Start()
+	}
+	for _, consumer := range r.Consumers {
+		consumer.Start()
+	}
 }
 
 // Shutdown closes every publisher and consumer. It is safe to call on a nil
@@ -329,9 +345,18 @@ type RabbitMQPublisher struct {
 }
 
 func NewRabbitMQPublisher(l *logging.Logger, url string, exchange *conftype.Exchange) *RabbitMQPublisher {
+	return newRabbitMQPublisher(l, url, exchange, true)
+}
+
+// newRabbitMQPublisher builds the publisher and optionally starts its
+// reconnect loop. The plugin constructs without starting so that connecting
+// happens in Start.
+func newRabbitMQPublisher(l *logging.Logger, url string, exchange *conftype.Exchange, start bool) *RabbitMQPublisher {
 	p := &RabbitMQPublisher{exchange: exchange}
 	p.RabbitMQBase = newRabbitMQBase(l, url, p)
-	p.Start()
+	if start {
+		p.Start()
+	}
 	return p
 }
 
@@ -418,9 +443,17 @@ type RabbitMQConsumer struct {
 }
 
 func NewRabbitMQConsumer(l *logging.Logger, url string, exchange *conftype.Exchange, queue *conftype.Queue) *RabbitMQConsumer {
+	return newRabbitMQConsumer(l, url, exchange, queue, true)
+}
+
+// newRabbitMQConsumer builds the consumer and optionally starts its
+// reconnect loop.
+func newRabbitMQConsumer(l *logging.Logger, url string, exchange *conftype.Exchange, queue *conftype.Queue, start bool) *RabbitMQConsumer {
 	c := &RabbitMQConsumer{queue: queue, exchange: exchange}
 	c.RabbitMQBase = newRabbitMQBase(l, url, c)
-	c.Start()
+	if start {
+		c.Start()
+	}
 	return c
 }
 
@@ -490,4 +523,61 @@ func (c *RabbitMQConsumer) Consume(prefetchCount int) (<-chan amqp.Delivery, err
 		false,
 		nil,
 	)
+}
+
+// RabbitMQ 是 RabbitMQ 插件。publisher / consumer 对象在构造期创建，
+// 连接与重连循环在 Start 阶段启动。
+type RabbitMQ struct {
+	ezboot.PluginBase
+
+	conf   *config.Config
+	logger *logging.Logger
+	rabbitMQ
+}
+
+// RabbitMQProviderSet 提供 RabbitMQ 插件。publisher / consumer 按名字
+// 使用，没有“默认实例”，因此这里没有 default provider。
+var RabbitMQProviderSet = wire.NewSet(NewRabbitMQ)
+
+// NewRabbitMQ 创建插件并构造 publisher / consumer 对象；连接由 Start 建立。
+func NewRabbitMQ(cfg *config.Config, logger *logging.Logger) (*RabbitMQ, error) {
+	if cfg == nil {
+		return nil, errors.New("infra: rabbitmq requires a config")
+	}
+	if cfg.App.Middleware.RabbitMQ.Url == "" {
+		return nil, errors.New("infra: rabbitmq plugin is enabled but url is empty")
+	}
+
+	r := &RabbitMQ{conf: cfg, logger: loggerOrDefault(logger)}
+	if err := r.open(cfg, r.logger); err != nil {
+		return nil, err
+	}
+
+	return r, nil
+}
+
+// Name 返回插件名。
+func (r *RabbitMQ) Name() string { return "rabbitmq" }
+
+// Start 启动所有 publisher / consumer 的重连循环，然后阻塞到 ctx 结束。
+func (r *RabbitMQ) Start(ctx context.Context) error {
+	if client, err := r.get(); err == nil {
+		client.start()
+	}
+
+	<-ctx.Done()
+	return nil
+}
+
+// Ready 检查已配置的 publisher / consumer 是否就绪。
+func (r *RabbitMQ) Ready(ctx context.Context) error {
+	return errors.Join(r.healthy(ctx)...)
+}
+
+// Close 关闭连接。
+func (r *RabbitMQ) Close(context.Context) error {
+	if r == nil {
+		return nil
+	}
+	return r.close()
 }

@@ -10,6 +10,9 @@ import (
 
 	"github.com/segmentio/kafka-go"
 
+	"github.com/ez4bk/ezboot"
+	"github.com/google/wire"
+
 	"github.com/ez4bk/ezboot/internal/gin-boot/config"
 )
 
@@ -134,4 +137,56 @@ func (s *Kafka) KafkaWriter(topic string) (*kafka.Writer, error) {
 		Topic:    topic,
 		Balancer: &kafka.LeastBytes{},
 	}, nil
+}
+
+// Kafka 是 Kafka 插件。它只保存 broker 列表；reader / writer 由调用方
+// 通过 KafkaReader / KafkaWriter 按需创建。
+type Kafka struct {
+	ezboot.PluginBase
+
+	conf *config.Config
+	kafkaClients
+}
+
+// KafkaProviderSet 提供 Kafka 插件。broker 没有“默认实例”的概念，
+// 因此这里没有 default provider。
+var KafkaProviderSet = wire.NewSet(NewKafka)
+
+// NewKafka 创建插件并记录 broker 列表。
+func NewKafka(cfg *config.Config) (*Kafka, error) {
+	if cfg == nil {
+		return nil, errors.New("infra: kafka requires a config")
+	}
+	if len(cfg.App.Middleware.Kafka.KafkaClusterURL) == 0 {
+		return nil, errors.New("infra: kafka plugin is enabled but no broker is configured")
+	}
+
+	k := &Kafka{conf: cfg}
+	if err := k.open(cfg); err != nil {
+		return nil, err
+	}
+
+	return k, nil
+}
+
+// Name 返回插件名。
+func (k *Kafka) Name() string { return "kafka" }
+
+// Start 阻塞到 ctx 结束。
+func (k *Kafka) Start(ctx context.Context) error {
+	<-ctx.Done()
+	return nil
+}
+
+// Ready 探测已配置的 broker。
+func (k *Kafka) Ready(ctx context.Context) error {
+	return errors.Join(k.healthy(ctx)...)
+}
+
+// Close 释放 broker 句柄。
+func (k *Kafka) Close(context.Context) error {
+	if k == nil {
+		return nil
+	}
+	return k.close()
 }

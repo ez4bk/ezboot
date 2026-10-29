@@ -12,6 +12,10 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"xorm.io/xorm"
 
+	"github.com/ez4bk/ezboot"
+	"github.com/ez4bk/ezboot/with"
+	"github.com/google/wire"
+
 	"github.com/ez4bk/ezboot/internal/gin-boot/config"
 	"github.com/ez4bk/ezboot/internal/gin-boot/middleware/tracing/otelxorm"
 	"github.com/ez4bk/ezboot/internal/logging"
@@ -448,4 +452,66 @@ func parseDSN(raw string) (schema string, rest string, err error) {
 		}
 	}
 	return "", raw, nil
+}
+
+// MySQL 是数据库插件。一个插件管理配置里所有 MySQL / SQLite / Pgsql
+// 实例，与 app.middleware.mysql 等配置段一一对应。
+type MySQL struct {
+	ezboot.PluginBase
+
+	conf   *config.Config
+	logger *logging.Logger
+	dbConns
+}
+
+// MySQLProviderSet 提供数据库插件，以及 default 实例的 xorm 引擎。
+var MySQLProviderSet = wire.NewSet(NewMySQL, ProvideDefaultMySQL)
+
+// NewMySQL 创建插件并建立连接池。连接池在第一次查询时才真正连接
+// 数据库，所以这里不产生网络 I/O。
+func NewMySQL(cfg *config.Config, logger *logging.Logger) (*MySQL, error) {
+	if cfg == nil {
+		return nil, errors.New("infra: mysql requires a config")
+	}
+	if len(cfg.App.Middleware.Mysql)+len(cfg.App.Middleware.Sqlite)+len(cfg.App.Middleware.Pgsql) == 0 {
+		return nil, errors.New("infra: mysql plugin is enabled but no database is configured")
+	}
+
+	m := &MySQL{conf: cfg, logger: loggerOrDefault(logger)}
+	if err := m.open(cfg, m.logger); err != nil {
+		return nil, err
+	}
+
+	return m, nil
+}
+
+// Name 返回插件名。
+func (m *MySQL) Name() string { return "mysql" }
+
+// Start 注册默认数据库并阻塞到 ctx 结束。
+func (m *MySQL) Start(ctx context.Context) error {
+	if engine, err := m.engine(defaultName); err == nil {
+		with.SetDefault(engine)
+	}
+
+	<-ctx.Done()
+	return nil
+}
+
+// Ready 对已打开的数据库做一次 Ping。
+func (m *MySQL) Ready(ctx context.Context) error {
+	return errors.Join(m.healthy(ctx)...)
+}
+
+// Close 释放所有连接池。
+func (m *MySQL) Close(context.Context) error {
+	if m == nil {
+		return nil
+	}
+	return m.close()
+}
+
+// ProvideDefaultMySQL 提供 default 实例的 xorm 引擎。
+func ProvideDefaultMySQL(m *MySQL) (*xorm.Engine, error) {
+	return m.DefaultORMEngine()
 }
