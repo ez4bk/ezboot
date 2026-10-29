@@ -23,12 +23,14 @@ type RabbitMQClient struct {
 	Consumers  map[string]*RabbitMQConsumer
 }
 
-type rabbitMQ struct {
+type RabbitMQ struct {
+	ezboot.PluginBase
+
 	mu     sync.Mutex
 	client *RabbitMQClient
 }
 
-func (r *rabbitMQ) open(cfg *config.Config, logger *logging.Logger) error {
+func (r *RabbitMQ) open(cfg *config.Config, logger *logging.Logger) error {
 	conf := &cfg.App.Middleware.RabbitMQ
 	if !conf.Startup {
 		return nil
@@ -52,7 +54,7 @@ func (r *rabbitMQ) open(cfg *config.Config, logger *logging.Logger) error {
 	return nil
 }
 
-func (r *rabbitMQ) get() (*RabbitMQClient, error) {
+func (r *RabbitMQ) get() (*RabbitMQClient, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -62,7 +64,7 @@ func (r *rabbitMQ) get() (*RabbitMQClient, error) {
 	return r.client, nil
 }
 
-func (r *rabbitMQ) close() error {
+func (r *RabbitMQ) close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -74,7 +76,7 @@ func (r *rabbitMQ) close() error {
 	return err
 }
 
-func (r *rabbitMQ) healthy(_ context.Context) []error {
+func (r *RabbitMQ) healthy(_ context.Context) []error {
 	r.mu.Lock()
 	client := r.client
 	r.mu.Unlock()
@@ -103,7 +105,7 @@ func (s *RabbitMQ) RabbitMQ() (*RabbitMQClient, error) {
 	if s == nil {
 		return nil, resourceError("rabbitmq", defaultName, nil)
 	}
-	return s.rabbitMQ.get()
+	return s.get()
 }
 
 // start launches the reconnect loop of every publisher and consumer.
@@ -526,17 +528,7 @@ func (c *RabbitMQConsumer) Consume(prefetchCount int) (<-chan amqp.Delivery, err
 }
 
 // RabbitMQ 是 RabbitMQ 插件。publisher / consumer 对象在构造期创建，
-// 连接与重连循环在 Start 阶段启动。
-type RabbitMQ struct {
-	ezboot.PluginBase
-
-	conf   *config.Config
-	logger *logging.Logger
-	rabbitMQ
-}
-
-// RabbitMQProviderSet 提供 RabbitMQ 插件。publisher / consumer 按名字
-// 使用，没有“默认实例”，因此这里没有 default provider。
+// 连接与重连循环在 Start 阶段启动；没有 default provider。
 var RabbitMQProviderSet = wire.NewSet(NewRabbitMQ)
 
 // NewRabbitMQ 创建插件并构造 publisher / consumer 对象；连接由 Start 建立。
@@ -548,8 +540,8 @@ func NewRabbitMQ(cfg *config.Config, logger *logging.Logger) (*RabbitMQ, error) 
 		return nil, errors.New("infra: rabbitmq plugin is enabled but url is empty")
 	}
 
-	r := &RabbitMQ{conf: cfg, logger: loggerOrDefault(logger)}
-	if err := r.open(cfg, r.logger); err != nil {
+	r := &RabbitMQ{}
+	if err := r.open(cfg, loggerOrDefault(logger)); err != nil {
 		return nil, err
 	}
 

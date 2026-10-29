@@ -16,13 +16,15 @@ import (
 	"github.com/ez4bk/ezboot/internal/gin-boot/config"
 )
 
-type searchClients struct {
+type Elasticsearch struct {
+	ezboot.PluginBase
+
 	mu sync.RWMutex
 
 	clients map[string]*elasticsearch.Client
 }
 
-func (s *searchClients) open(cfg *config.Config) error {
+func (s *Elasticsearch) open(cfg *config.Config) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -40,7 +42,7 @@ func (s *searchClients) open(cfg *config.Config) error {
 	return nil
 }
 
-func (s *searchClients) get(name string) (*elasticsearch.Client, error) {
+func (s *Elasticsearch) get(name string) (*elasticsearch.Client, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -52,16 +54,16 @@ func (s *searchClients) get(name string) (*elasticsearch.Client, error) {
 }
 
 // close is a no-op for the Elasticsearch v7 client, which does not expose a
-// Close method. It exists so searchClients satisfies the same lifecycle
+// Close method. It exists so Elasticsearch satisfies the same lifecycle
 // contract as the other resource groups.
-func (s *searchClients) close() error {
+func (s *Elasticsearch) close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.clients = nil
 	return nil
 }
 
-func (s *searchClients) healthy(ctx context.Context) []error {
+func (s *Elasticsearch) healthy(ctx context.Context) []error {
 	s.mu.RLock()
 	clients := make(map[string]*elasticsearch.Client, len(s.clients))
 	for name, client := range s.clients {
@@ -89,7 +91,7 @@ func (s *Elasticsearch) Elasticsearch(name string) (*elasticsearch.Client, error
 	if s == nil {
 		return nil, resourceError("elasticsearch", name, nil)
 	}
-	return s.searchClients.get(name)
+	return s.get(name)
 }
 
 // DefaultElasticsearch returns the default Elasticsearch client.
@@ -106,14 +108,6 @@ func elasticsearchConfig(opt *conf_type.Elasticsearch) *elasticsearch.Config {
 }
 
 // Elasticsearch 是 Elasticsearch 插件。客户端在构造期创建。
-type Elasticsearch struct {
-	ezboot.PluginBase
-
-	conf *config.Config
-	searchClients
-}
-
-// ElasticsearchProviderSet 提供插件，以及 default 实例的客户端。
 var ElasticsearchProviderSet = wire.NewSet(NewElasticsearch, ProvideDefaultElasticsearch)
 
 // NewElasticsearch 创建插件并建立客户端。
@@ -125,7 +119,7 @@ func NewElasticsearch(cfg *config.Config) (*Elasticsearch, error) {
 		return nil, errors.New("infra: elasticsearch plugin is enabled but no instance is configured")
 	}
 
-	e := &Elasticsearch{conf: cfg}
+	e := &Elasticsearch{}
 	if err := e.open(cfg); err != nil {
 		return nil, err
 	}

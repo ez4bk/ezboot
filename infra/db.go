@@ -12,9 +12,10 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"xorm.io/xorm"
 
+	"github.com/google/wire"
+
 	"github.com/ez4bk/ezboot"
 	"github.com/ez4bk/ezboot/with"
-	"github.com/google/wire"
 
 	"github.com/ez4bk/ezboot/internal/gin-boot/config"
 	"github.com/ez4bk/ezboot/internal/gin-boot/middleware/tracing/otelxorm"
@@ -29,8 +30,6 @@ const (
 	DatabasePostgres
 	DatabaseSQLite
 )
-
-const defaultName = "default"
 
 // DB is a typed handle to a configured database engine.
 //
@@ -80,7 +79,9 @@ func (db *DB) Close() error {
 	return db.engine.Close()
 }
 
-type dbConns struct {
+type MySQL struct {
+	ezboot.PluginBase
+
 	mu sync.RWMutex
 
 	defaultType DatabaseType
@@ -89,7 +90,7 @@ type dbConns struct {
 	pgsqls      map[string]*pg.DB
 }
 
-func (d *dbConns) open(cfg *config.Config, logger *logging.Logger) error {
+func (d *MySQL) open(cfg *config.Config, logger *logging.Logger) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -171,13 +172,13 @@ func (d *dbConns) open(cfg *config.Config, logger *logging.Logger) error {
 	return nil
 }
 
-func (d *dbConns) setDefault(t DatabaseType) {
+func (d *MySQL) setDefault(t DatabaseType) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.defaultType = t
 }
 
-func (d *dbConns) get(name string, dialect DatabaseType) (*DB, error) {
+func (d *MySQL) get(name string, dialect DatabaseType) (*DB, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -201,7 +202,7 @@ func (d *dbConns) get(name string, dialect DatabaseType) (*DB, error) {
 	return db, nil
 }
 
-func (d *dbConns) db(name string) (*DB, error) {
+func (d *MySQL) db(name string) (*DB, error) {
 	d.mu.RLock()
 	dialect := d.defaultType
 	d.mu.RUnlock()
@@ -209,7 +210,7 @@ func (d *dbConns) db(name string) (*DB, error) {
 	return d.get(name, dialect)
 }
 
-func (d *dbConns) pgsql(name string) (*pg.DB, error) {
+func (d *MySQL) pgsql(name string) (*pg.DB, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
@@ -220,7 +221,7 @@ func (d *dbConns) pgsql(name string) (*pg.DB, error) {
 	return db, nil
 }
 
-func (d *dbConns) engine(name string) (*xorm.Engine, error) {
+func (d *MySQL) engine(name string) (*xorm.Engine, error) {
 	db, err := d.db(name)
 	if err != nil {
 		return nil, err
@@ -228,7 +229,7 @@ func (d *dbConns) engine(name string) (*xorm.Engine, error) {
 	return db.engine, nil
 }
 
-func (d *dbConns) session(ctx context.Context, name string) (*xorm.Session, error) {
+func (d *MySQL) session(ctx context.Context, name string) (*xorm.Session, error) {
 	engine, err := d.engine(name)
 	if err != nil {
 		return nil, err
@@ -236,7 +237,7 @@ func (d *dbConns) session(ctx context.Context, name string) (*xorm.Session, erro
 	return engine.Context(ctx), nil
 }
 
-func (d *dbConns) transaction(ctx context.Context, name string, f func(*xorm.Session) (any, error)) (any, error) {
+func (d *MySQL) transaction(ctx context.Context, name string, f func(*xorm.Session) (any, error)) (any, error) {
 	engine, err := d.engine(name)
 	if err != nil {
 		return nil, err
@@ -246,7 +247,7 @@ func (d *dbConns) transaction(ctx context.Context, name string, f func(*xorm.Ses
 	})
 }
 
-func (d *dbConns) close() error {
+func (d *MySQL) close() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -274,7 +275,7 @@ func (d *dbConns) close() error {
 	return errors.Join(errs...)
 }
 
-func (d *dbConns) healthy(ctx context.Context) []error {
+func (d *MySQL) healthy(ctx context.Context) []error {
 	type namedEngine struct {
 		name   string
 		engine *xorm.Engine
@@ -323,7 +324,7 @@ func (s *MySQL) DB(name string) (*DB, error) {
 	if s == nil {
 		return nil, resourceError("db", name, nil)
 	}
-	return s.dbConns.db(name)
+	return s.db(name)
 }
 
 // DefaultDB returns the default database handle.
@@ -336,7 +337,7 @@ func (s *MySQL) MySQL(name string) (*DB, error) {
 	if s == nil {
 		return nil, resourceError("mysql", name, nil)
 	}
-	return s.dbConns.get(name, DatabaseMySQL)
+	return s.get(name, DatabaseMySQL)
 }
 
 // SQLite returns a configured SQLite handle by name.
@@ -344,7 +345,7 @@ func (s *MySQL) SQLite(name string) (*DB, error) {
 	if s == nil {
 		return nil, resourceError("sqlite", name, nil)
 	}
-	return s.dbConns.get(name, DatabaseSQLite)
+	return s.get(name, DatabaseSQLite)
 }
 
 // Pgsql returns a configured PostgreSQL client by name.
@@ -352,7 +353,7 @@ func (s *MySQL) Pgsql(name string) (*pg.DB, error) {
 	if s == nil {
 		return nil, resourceError("pgsql", name, nil)
 	}
-	return s.dbConns.pgsql(name)
+	return s.pgsql(name)
 }
 
 // DefaultPgsql returns the default PostgreSQL client.
@@ -365,7 +366,7 @@ func (s *MySQL) ORMEngine(name string) (*xorm.Engine, error) {
 	if s == nil {
 		return nil, resourceError("db", name, nil)
 	}
-	return s.dbConns.engine(name)
+	return s.engine(name)
 }
 
 // DefaultORMEngine returns the default xorm engine.
@@ -387,7 +388,7 @@ func (s *MySQL) Session(ctx context.Context, name string) (*xorm.Session, error)
 	if s == nil {
 		return nil, resourceError("db", name, nil)
 	}
-	return s.dbConns.session(ctx, name)
+	return s.session(ctx, name)
 }
 
 // DefaultSession starts a session for the default database.
@@ -411,7 +412,7 @@ func (s *MySQL) Transaction(
 	if s == nil {
 		return nil, resourceError("db", name, nil)
 	}
-	return s.dbConns.transaction(ctx, name, f)
+	return s.transaction(ctx, name, f)
 }
 
 // DefaultTransaction runs f in a transaction on the default database.
@@ -425,7 +426,7 @@ func (s *MySQL) DefaultTransaction(
 // UseDefaultDatabase selects the database family used by DB/Session/Transaction.
 func (s *MySQL) UseDefaultDatabase(dbt DatabaseType) {
 	if s != nil {
-		s.dbConns.setDefault(dbt)
+		s.setDefault(dbt)
 	}
 }
 
@@ -456,19 +457,11 @@ func parseDSN(raw string) (schema string, rest string, err error) {
 
 // MySQL 是数据库插件。一个插件管理配置里所有 MySQL / SQLite / Pgsql
 // 实例，与 app.middleware.mysql 等配置段一一对应。
-type MySQL struct {
-	ezboot.PluginBase
-
-	conf   *config.Config
-	logger *logging.Logger
-	dbConns
-}
-
-// MySQLProviderSet 提供数据库插件，以及 default 实例的 xorm 引擎。
+//
+// 连接池在构造期建立（不产生网络 I/O），Start 只注册默认引擎并阻塞。
 var MySQLProviderSet = wire.NewSet(NewMySQL, ProvideDefaultMySQL)
 
-// NewMySQL 创建插件并建立连接池。连接池在第一次查询时才真正连接
-// 数据库，所以这里不产生网络 I/O。
+// NewMySQL 创建插件并建立连接池。
 func NewMySQL(cfg *config.Config, logger *logging.Logger) (*MySQL, error) {
 	if cfg == nil {
 		return nil, errors.New("infra: mysql requires a config")
@@ -477,8 +470,8 @@ func NewMySQL(cfg *config.Config, logger *logging.Logger) (*MySQL, error) {
 		return nil, errors.New("infra: mysql plugin is enabled but no database is configured")
 	}
 
-	m := &MySQL{conf: cfg, logger: loggerOrDefault(logger)}
-	if err := m.open(cfg, m.logger); err != nil {
+	m := &MySQL{}
+	if err := m.open(cfg, loggerOrDefault(logger)); err != nil {
 		return nil, err
 	}
 

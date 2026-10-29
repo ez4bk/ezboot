@@ -17,14 +17,16 @@ import (
 	"github.com/ez4bk/ezboot/internal/gin-boot/config"
 )
 
-type redisClients struct {
+type Redis struct {
+	ezboot.PluginBase
+
 	mu sync.RWMutex
 
 	clients map[string]*redis.Client
 	caches  map[string]ICache
 }
 
-func (rr *redisClients) open(cfg *config.Config) error {
+func (rr *Redis) open(cfg *config.Config) error {
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 
@@ -52,7 +54,7 @@ func (rr *redisClients) open(cfg *config.Config) error {
 	return nil
 }
 
-func (rr *redisClients) get(name string) (*redis.Client, error) {
+func (rr *Redis) get(name string) (*redis.Client, error) {
 	rr.mu.RLock()
 	defer rr.mu.RUnlock()
 
@@ -63,7 +65,7 @@ func (rr *redisClients) get(name string) (*redis.Client, error) {
 	return client, nil
 }
 
-func (rr *redisClients) cache(name string) (ICache, error) {
+func (rr *Redis) cache(name string) (ICache, error) {
 	rr.mu.RLock()
 	defer rr.mu.RUnlock()
 
@@ -74,7 +76,7 @@ func (rr *redisClients) cache(name string) (ICache, error) {
 	return cache, nil
 }
 
-func (rr *redisClients) close() error {
+func (rr *Redis) close() error {
 	rr.mu.Lock()
 	defer rr.mu.Unlock()
 
@@ -91,7 +93,7 @@ func (rr *redisClients) close() error {
 	return errors.Join(errs...)
 }
 
-func (rr *redisClients) healthy(ctx context.Context) []error {
+func (rr *Redis) healthy(ctx context.Context) []error {
 	type namedClient struct {
 		name   string
 		client *redis.Client
@@ -118,7 +120,7 @@ func (s *Redis) Redis(name string) (*redis.Client, error) {
 	if s == nil {
 		return nil, resourceError("redis", name, nil)
 	}
-	return s.redisClients.get(name)
+	return s.get(name)
 }
 
 // DefaultRedis returns the default Redis client.
@@ -138,7 +140,7 @@ func (s *Redis) Cache(name string) (ICache, error) {
 	if s == nil {
 		return nil, resourceError("cache", name, nil)
 	}
-	return s.redisClients.cache(name)
+	return s.cache(name)
 }
 
 // DefaultCache returns the default cache.
@@ -188,14 +190,6 @@ func redisOptions(opt *conftype.Redis) *redis.Options {
 }
 
 // Redis 是 Redis 插件。客户端在构造期创建，Start 只注册默认实例并阻塞。
-type Redis struct {
-	ezboot.PluginBase
-
-	conf *config.Config
-	redisClients
-}
-
-// RedisProviderSet 提供 Redis 插件，以及 default 实例的客户端。
 var RedisProviderSet = wire.NewSet(NewRedis, ProvideDefaultRedis)
 
 // NewRedis 创建插件并建立客户端。go-redis 的客户端是懒连接的，这里
@@ -208,7 +202,7 @@ func NewRedis(cfg *config.Config) (*Redis, error) {
 		return nil, errors.New("infra: redis plugin is enabled but no instance is configured")
 	}
 
-	r := &Redis{conf: cfg}
+	r := &Redis{}
 	if err := r.open(cfg); err != nil {
 		return nil, err
 	}

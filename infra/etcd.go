@@ -16,14 +16,16 @@ import (
 	"github.com/ez4bk/ezboot/internal/gin-boot/config"
 )
 
-type etcdClient struct {
+type Etcd struct {
+	ezboot.PluginBase
+
 	mu sync.RWMutex
 
 	client  *clientv3.Client
 	polling bool
 }
 
-func (e *etcdClient) open(cfg *config.Config) error {
+func (e *Etcd) open(cfg *config.Config) error {
 	conf := &cfg.App.Middleware.Etcd
 	if !conf.Startup {
 		return nil
@@ -59,7 +61,7 @@ func (e *etcdClient) open(cfg *config.Config) error {
 	return nil
 }
 
-func (e *etcdClient) get() (*clientv3.Client, error) {
+func (e *Etcd) get() (*clientv3.Client, error) {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
@@ -69,13 +71,13 @@ func (e *etcdClient) get() (*clientv3.Client, error) {
 	return e.client, nil
 }
 
-func (e *etcdClient) isPolling() bool {
+func (e *Etcd) isPolling() bool {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return e.polling
 }
 
-func (e *etcdClient) close() error {
+func (e *Etcd) close() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -87,7 +89,7 @@ func (e *etcdClient) close() error {
 	return err
 }
 
-func (e *etcdClient) healthy(ctx context.Context) []error {
+func (e *Etcd) healthy(ctx context.Context) []error {
 	e.mu.RLock()
 	client := e.client
 	e.mu.RUnlock()
@@ -115,7 +117,7 @@ func (s *Etcd) Etcd() (*clientv3.Client, error) {
 	if s == nil {
 		return nil, resourceError("etcd", defaultName, nil)
 	}
-	return s.etcdClient.get()
+	return s.get()
 }
 
 // EtcdPolling reports whether remote config should use polling instead of a
@@ -124,18 +126,10 @@ func (s *Etcd) EtcdPolling() bool {
 	if s == nil {
 		return false
 	}
-	return s.etcdClient.isPolling()
+	return s.isPolling()
 }
 
-// Etcd 是 etcd 插件。远程配置中心也挂在这个插件上。
-type Etcd struct {
-	ezboot.PluginBase
-
-	conf *config.Config
-	etcdClient
-}
-
-// EtcdProviderSet 提供插件，以及默认客户端。
+// Etcd 是 etcd 插件。客户端在构造期创建；远程配置中心也挂在这个插件上。
 var EtcdProviderSet = wire.NewSet(NewEtcd, ProvideDefaultEtcd)
 
 // NewEtcd 创建插件并建立客户端。
@@ -147,7 +141,7 @@ func NewEtcd(cfg *config.Config) (*Etcd, error) {
 		return nil, errors.New("infra: etcd plugin is enabled but no endpoint is configured")
 	}
 
-	e := &Etcd{conf: cfg}
+	e := &Etcd{}
 	if err := e.open(cfg); err != nil {
 		return nil, err
 	}

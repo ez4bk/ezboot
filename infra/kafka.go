@@ -29,13 +29,15 @@ func (k *KafkaBrokers) Brokers() []string {
 	return append([]string(nil), k.brokers...)
 }
 
-type kafkaClients struct {
+type Kafka struct {
+	ezboot.PluginBase
+
 	mu sync.RWMutex
 
 	client *KafkaBrokers
 }
 
-func (k *kafkaClients) open(cfg *config.Config) error {
+func (k *Kafka) open(cfg *config.Config) error {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 
@@ -52,7 +54,7 @@ func (k *kafkaClients) open(cfg *config.Config) error {
 	return nil
 }
 
-func (k *kafkaClients) get() (*KafkaBrokers, error) {
+func (k *Kafka) get() (*KafkaBrokers, error) {
 	k.mu.RLock()
 	defer k.mu.RUnlock()
 
@@ -62,14 +64,14 @@ func (k *kafkaClients) get() (*KafkaBrokers, error) {
 	return k.client, nil
 }
 
-func (k *kafkaClients) close() error {
+func (k *Kafka) close() error {
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	k.client = nil
 	return nil
 }
 
-func (k *kafkaClients) healthy(ctx context.Context) []error {
+func (k *Kafka) healthy(ctx context.Context) []error {
 	k.mu.RLock()
 	client := k.client
 	k.mu.RUnlock()
@@ -102,7 +104,7 @@ func (s *Kafka) KafkaBrokers() (*KafkaBrokers, error) {
 	if s == nil {
 		return nil, resourceError("kafka", defaultName, nil)
 	}
-	return s.kafkaClients.get()
+	return s.get()
 }
 
 // KafkaReader creates a reader on this plugin's Kafka brokers.
@@ -140,16 +142,7 @@ func (s *Kafka) KafkaWriter(topic string) (*kafka.Writer, error) {
 }
 
 // Kafka 是 Kafka 插件。它只保存 broker 列表；reader / writer 由调用方
-// 通过 KafkaReader / KafkaWriter 按需创建。
-type Kafka struct {
-	ezboot.PluginBase
-
-	conf *config.Config
-	kafkaClients
-}
-
-// KafkaProviderSet 提供 Kafka 插件。broker 没有“默认实例”的概念，
-// 因此这里没有 default provider。
+// 通过 KafkaReader / KafkaWriter 按需创建，因此没有 default provider。
 var KafkaProviderSet = wire.NewSet(NewKafka)
 
 // NewKafka 创建插件并记录 broker 列表。
@@ -161,7 +154,7 @@ func NewKafka(cfg *config.Config) (*Kafka, error) {
 		return nil, errors.New("infra: kafka plugin is enabled but no broker is configured")
 	}
 
-	k := &Kafka{conf: cfg}
+	k := &Kafka{}
 	if err := k.open(cfg); err != nil {
 		return nil, err
 	}

@@ -212,6 +212,8 @@ OTEL 插件虽然恒在默认组合里，但**实际是否启用由配置决定*
 
 每个 infra 插件都和自己的文件放在一起，文件里同时提供插件类型、构造函数、生命周期方法和 `ProviderSet`——没有集中的 `plugin.go`。
 
+插件类型**就是资源容器本身**：`MySQL` 直接持有 `mysqls`/`sqlites`/`pgsqls`，`Redis` 直接持有 clients，没有再套一层 `dbConns` / `redisClients`。
+
 ```go
 // infra/redis.go
 var RedisProviderSet = wire.NewSet(NewRedis, ProvideDefaultRedis)
