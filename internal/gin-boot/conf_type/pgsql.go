@@ -1,12 +1,17 @@
 package conf_type
 
-import "github.com/go-pg/pg/v10"
+import "time"
 
 // Pgsql Pgsql
 type Pgsql struct {
-	Builder func() *pg.DB
 	Startup bool   `yaml:"_startup"`
 	URL     string `yaml:"url"`
+
+	HiddenSQL bool `yaml:"hidden_sql"`
+
+	MaxIdleConnection int           `yaml:"max_idle_connection"`
+	MaxOpenConnection int           `yaml:"max_open_connection"`
+	MaxIdleTime       time.Duration `yaml:"max_idle_time"`
 }
 
 // Pgsqls Pgsqls

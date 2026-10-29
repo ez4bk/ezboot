@@ -9,10 +9,11 @@ import (
 
 	"github.com/go-redis/redis"
 
+	"github.com/google/wire"
+
 	"github.com/ez4bk/ezboot"
 	conftype "github.com/ez4bk/ezboot/internal/gin-boot/conf_type"
 	"github.com/ez4bk/ezboot/with"
-	"github.com/google/wire"
 
 	"github.com/ez4bk/ezboot/internal/gin-boot/config"
 )
@@ -26,85 +27,85 @@ type Redis struct {
 	caches  map[string]ICache
 }
 
-func (rr *Redis) open(cfg *config.Config) error {
-	rr.mu.Lock()
-	defer rr.mu.Unlock()
+func (r *Redis) open(cfg *config.Config) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
-	rr.clients = make(map[string]*redis.Client)
-	rr.caches = make(map[string]ICache)
+	r.clients = make(map[string]*redis.Client)
+	r.caches = make(map[string]ICache)
 
 	for name, c := range cfg.App.Middleware.Redis {
 		if !c.Startup {
 			continue
 		}
-		rr.clients[name] = redis.NewClient(redisOptions(&c))
+		r.clients[name] = redis.NewClient(redisOptions(&c))
 	}
 
 	for name, c := range cfg.App.Middleware.Cache {
 		if c.BackendType != conftype.TypeCacheRedis {
 			continue
 		}
-		client, ok := rr.clients[c.Name]
+		client, ok := r.clients[c.Name]
 		if !ok {
 			return fmt.Errorf("cache %q references unknown redis %q", name, c.Name)
 		}
-		rr.caches[name] = NewRedisCache(client)
+		r.caches[name] = NewRedisCache(client)
 	}
 
 	return nil
 }
 
-func (rr *Redis) get(name string) (*redis.Client, error) {
-	rr.mu.RLock()
-	defer rr.mu.RUnlock()
+func (r *Redis) get(name string) (*redis.Client, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 
-	client, ok := rr.clients[name]
+	client, ok := r.clients[name]
 	if !ok {
 		return nil, resourceError("redis", name, nil)
 	}
 	return client, nil
 }
 
-func (rr *Redis) cache(name string) (ICache, error) {
-	rr.mu.RLock()
-	defer rr.mu.RUnlock()
+func (r *Redis) cache(name string) (ICache, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 
-	cache, ok := rr.caches[name]
+	cache, ok := r.caches[name]
 	if !ok {
 		return nil, resourceError("cache", name, nil)
 	}
 	return cache, nil
 }
 
-func (rr *Redis) close() error {
-	rr.mu.Lock()
-	defer rr.mu.Unlock()
+func (r *Redis) close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
 	var errs []error
-	for name, client := range rr.clients {
+	for name, client := range r.clients {
 		if err := client.Close(); err != nil {
 			errs = append(errs, fmt.Errorf("close redis %q: %w", name, err))
 		}
 	}
 
-	rr.clients = nil
-	rr.caches = nil
+	r.clients = nil
+	r.caches = nil
 
 	return errors.Join(errs...)
 }
 
-func (rr *Redis) healthy(ctx context.Context) []error {
+func (r *Redis) healthy(ctx context.Context) []error {
 	type namedClient struct {
 		name   string
 		client *redis.Client
 	}
 
-	rr.mu.RLock()
-	clients := make([]namedClient, 0, len(rr.clients))
-	for name, client := range rr.clients {
+	r.mu.RLock()
+	clients := make([]namedClient, 0, len(r.clients))
+	for name, client := range r.clients {
 		clients = append(clients, namedClient{name: name, client: client})
 	}
-	rr.mu.RUnlock()
+	r.mu.RUnlock()
 
 	var errs []error
 	for _, item := range clients {
@@ -116,19 +117,19 @@ func (rr *Redis) healthy(ctx context.Context) []error {
 }
 
 // Redis returns a configured Redis client by name.
-func (s *Redis) Redis(name string) (*redis.Client, error) {
-	if s == nil {
+func (r *Redis) Redis(name string) (*redis.Client, error) {
+	if r == nil {
 		return nil, resourceError("redis", name, nil)
 	}
-	return s.get(name)
+	return r.get(name)
 }
 
 // DefaultRedis returns the default Redis client.
 //
 // It returns nil when Redis is not configured. The error-returning variant
 // is Redis(defaultName).
-func (s *Redis) DefaultRedis() *redis.Client {
-	client, err := s.Redis(defaultName)
+func (r *Redis) DefaultRedis() *redis.Client {
+	client, err := r.Redis(defaultName)
 	if err != nil {
 		return nil
 	}
@@ -136,16 +137,16 @@ func (s *Redis) DefaultRedis() *redis.Client {
 }
 
 // Cache returns a configured cache by name.
-func (s *Redis) Cache(name string) (ICache, error) {
-	if s == nil {
+func (r *Redis) Cache(name string) (ICache, error) {
+	if r == nil {
 		return nil, resourceError("cache", name, nil)
 	}
-	return s.cache(name)
+	return r.cache(name)
 }
 
 // DefaultCache returns the default cache.
-func (s *Redis) DefaultCache() (ICache, error) {
-	return s.Cache(defaultName)
+func (r *Redis) DefaultCache() (ICache, error) {
+	return r.Cache(defaultName)
 }
 
 // redisOptions converts the YAML-facing config into go-redis options.

@@ -178,7 +178,7 @@ ezboot/
 
 | 插件 | 包 | `Start` | `Ready` | `Drain` | `Close` |
 |---|---|---|---|---|---|
-| `Databases` | `infra/db.go` | 构造期建 pool；Start 注册 with 默认引擎 → 阻塞 | Ping 全部 | — | 关 pool |
+| `Databases` | `infra/db.go` | 构造期建 pool（单方言）；Start 注册 with 默认引擎 → 阻塞 | Ping 全部 | — | 关 pool |
 | `Redis` | `infra/redis.go` | 构造期建 client；Start 注册 default → 阻塞 | Ping | — | 关闭 |
 | `Kafka` | `infra/kafka.go` | 构造期记录 broker；Start 阻塞 | 探 broker | — | 关闭 |
 | `RabbitMQ` | `infra/rabbitmq.go` | 构造期建对象；Start 启动重连 → 阻塞 | 探 channel | — | 关闭 |
@@ -237,25 +237,16 @@ func NewExampleDAO(log *ezboot.Logger, cache *redis.Client) (*ExampleDAO, error)
 
 | ProviderSet | 包含 | default provider |
 |---|---|---|
-| `infra.DatabasesProviderSet` | `NewDatabases` | — |
-| `infra.MySQLProviderSet` | `ProvideDefaultMySQL`（`*xorm.Engine`） | MySQL default |
-| `infra.SQLiteProviderSet` | `ProvideDefaultSQLite`（`*xorm.Engine`） | SQLite default |
-| `infra.PostgresProviderSet` | `ProvideDefaultPostgres`（`*pg.DB`） | Postgres default |
-
-MySQL 与 SQLite 的默认实例都是 `*xorm.Engine`，wire 无法区分，所以同一个 injector 里**只能引入其中一个**；Postgres 返回 `*pg.DB`，可以和任意一个共存。
+| `infra.DatabasesProviderSet` | `NewDatabases` + `ProvideDefaultEngine`（`*xorm.Engine`） | 有（三种方言统一） |
 | `infra.RedisProviderSet` | `NewRedis` + `ProvideDefaultRedis`（`*redis.Client`） | 有 |
 | `infra.ElasticsearchProviderSet` | `NewElasticsearch` + `ProvideDefaultElasticsearch`（`*elasticsearch.Client`） | 有 |
 | `infra.EtcdProviderSet` | `NewEtcd` + `ProvideDefaultEtcd`（`*clientv3.Client`） | 有 |
 | `infra.KafkaProviderSet` | `NewKafka` | 无（reader/writer 按 topic 创建） |
 | `infra.RabbitMQProviderSet` | `NewRabbitMQ` | 无（publisher/consumer 按名字使用） |
 
-非 default 实例由调用方自己写一个两行 provider：
+数据库插件要求**同一时刻只配置一种方言**：`NewDatabases` 会校验 MySQL / SQLite / Postgres 里恰好有一种被启用，零种或多种都直接报错。同一种方言可以配置多个命名实例（主库、报表库等），用 `d.Engine("report")` 取。
 
-```go
-func ProvideMiscRedis(r *infra.Redis) (*redis.Client, error) { return r.Redis("misc") }
-```
-
-句柄在构造期就存在，因此在 wire 里可以直接注入；但**不就绪**——`Ready` 通过之前不保证连得上，流量由 `/readyz` 把关。
+三种方言统一走 xorm：MySQL 用 `mysql` 驱动、SQLite 用 `sqlite3`、Postgres 用 `pgx`，默认实例都是 `*xorm.Engine`，因此只需要一个 `ProvideDefaultEngine`。`with.SetDefault` 也就对三种方言都成立。
 
 ### 6.4 什么不是插件
 

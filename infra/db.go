@@ -6,10 +6,11 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
-	"github.com/go-pg/pg/v10"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/google/wire"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"xorm.io/xorm"
 
 	"github.com/ez4bk/ezboot"
@@ -20,34 +21,31 @@ import (
 	"github.com/ez4bk/ezboot/internal/logging"
 )
 
-// Databases 是关系型数据库插件，管理配置里的 MySQL / SQLite / Postgres
-// 实例。
+// Dialect 是 Databases 插件当前使用的数据库方言。
+type Dialect string
+
+const (
+	DialectMySQL    Dialect = "mysql"
+	DialectSQLite   Dialect = "sqlite"
+	DialectPostgres Dialect = "postgres"
+)
+
+// Databases 是关系型数据库插件，统一通过 xorm 管理配置里的
+// MySQL / SQLite / Postgres 实例。
 //
-// 三类数据库各有独立的默认 provider，没有“当前默认数据库”这种全局
-// 选择：想要 MySQL 就注入 *xorm.Engine（ProvideDefaultMySQL），想要
-// Postgres 就注入 *pg.DB（ProvideDefaultPostgres）。
+// 同一时刻只允许配置一种方言，但同一种方言可以有多个命名实例
+// （主库、报表库、分片库等）。三种方言的默认实例都是 *xorm.Engine，
+// 因此只有一个 ProvideDefaultEngine。
 type Databases struct {
 	ezboot.PluginBase
 
 	mu      sync.RWMutex
-	mysqls  map[string]*xorm.Engine
-	sqlites map[string]*xorm.Engine
-	pgsqls  map[string]*pg.DB
+	dialect Dialect
+	engines map[string]*xorm.Engine
 }
 
-// DatabasesProviderSet 只提供数据库插件本身。
-var DatabasesProviderSet = wire.NewSet(NewDatabases)
-
-// MySQLProviderSet / SQLiteProviderSet / PostgresProviderSet 提供对应
-// 数据库 default 实例。只加你实际使用的那种。
-//
-// 注意：MySQL 与 SQLite 的默认实例都是 *xorm.Engine，wire 无法区分，
-// 所以同一个 injector 里不能同时引入这两个 set。
-var (
-	MySQLProviderSet    = wire.NewSet(ProvideDefaultMySQL)
-	SQLiteProviderSet   = wire.NewSet(ProvideDefaultSQLite)
-	PostgresProviderSet = wire.NewSet(ProvideDefaultPostgres)
-)
+// DatabasesProviderSet 提供数据库插件，以及 default 实例的 xorm 引擎。
+var DatabasesProviderSet = wire.NewSet(NewDatabases, ProvideDefaultEngine)
 
 // NewDatabases 创建插件并建立连接池。连接池在第一次查询时才真正连接
 // 数据库，所以这里不产生网络 I/O。
@@ -55,11 +53,13 @@ func NewDatabases(cfg *config.Config, logger *logging.Logger) (*Databases, error
 	if cfg == nil {
 		return nil, errors.New("infra: databases requires a config")
 	}
-	if len(cfg.App.Middleware.Mysql)+len(cfg.App.Middleware.Sqlite)+len(cfg.App.Middleware.Pgsql) == 0 {
-		return nil, errors.New("infra: databases plugin is enabled but no database is configured")
+
+	dialect, err := detectDialect(cfg)
+	if err != nil {
+		return nil, err
 	}
 
-	d := &Databases{}
+	d := &Databases{dialect: dialect}
 	if err := d.open(cfg, loggerOrDefault(logger)); err != nil {
 		return nil, err
 	}
@@ -67,86 +67,129 @@ func NewDatabases(cfg *config.Config, logger *logging.Logger) (*Databases, error
 	return d, nil
 }
 
+// detectDialect 统计配置里实际启用的方言。零种或多于一种都视为配置
+// 错误；同一种方言的多个实例是允许的。
+func detectDialect(cfg *config.Config) (Dialect, error) {
+	var found []Dialect
+
+	for _, c := range cfg.App.Middleware.Mysql {
+		if c.Startup {
+			found = append(found, DialectMySQL)
+			break
+		}
+	}
+	for _, c := range cfg.App.Middleware.Sqlite {
+		if c.Startup {
+			found = append(found, DialectSQLite)
+			break
+		}
+	}
+	for _, c := range cfg.App.Middleware.Pgsql {
+		if c.Startup {
+			found = append(found, DialectPostgres)
+			break
+		}
+	}
+
+	switch len(found) {
+	case 0:
+		return "", errors.New("infra: databases plugin is enabled but no database is configured")
+	case 1:
+		return found[0], nil
+	default:
+		names := make([]string, len(found))
+		for i, d := range found {
+			names[i] = string(d)
+		}
+		return "", fmt.Errorf("infra: only one database dialect may be configured, got %s", strings.Join(names, ", "))
+	}
+}
+
 func (d *Databases) open(cfg *config.Config, logger *logging.Logger) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	d.mysqls = make(map[string]*xorm.Engine)
-	d.sqlites = make(map[string]*xorm.Engine)
-	d.pgsqls = make(map[string]*pg.DB)
+	d.engines = make(map[string]*xorm.Engine)
 
-	for name, c := range cfg.App.Middleware.Mysql {
-		if !c.Startup {
-			continue
+	switch d.dialect {
+	case DialectMySQL:
+		for name, c := range cfg.App.Middleware.Mysql {
+			if !c.Startup {
+				continue
+			}
+
+			engine, err := xorm.NewEngine("mysql", c.Dsn)
+			if err != nil {
+				return fmt.Errorf("open mysql %q: %w", name, err)
+			}
+
+			applyPool(engine, c.MaxIdleConnection, c.MaxOpenConnection, c.MaxIdleTime)
+			engine.ShowSQL(!c.HiddenSQL)
+			engine.SetLogger(NewXormLogger(logger, !c.HiddenSQL))
+
+			if cfg.App.Middleware.Tracing.Database.Enabled {
+				engine.AddHook(otelxorm.NewTracingHook(&cfg.App.Middleware.Tracing))
+			}
+
+			d.engines[name] = engine
 		}
 
-		engine, err := xorm.NewEngine("mysql", c.Dsn)
-		if err != nil {
-			return fmt.Errorf("open mysql %q: %w", name, err)
+	case DialectSQLite:
+		for name, c := range cfg.App.Middleware.Sqlite {
+			if !c.Startup {
+				continue
+			}
+
+			schema, rest, err := parseDSN(c.Dsn)
+			if err != nil {
+				return fmt.Errorf("open sqlite %q: %w", name, err)
+			}
+
+			engine, err := xorm.NewEngine(schema, rest)
+			if err != nil {
+				return fmt.Errorf("open sqlite %q: %w", name, err)
+			}
+
+			applyPool(engine, c.MaxIdleConnection, c.MaxOpenConnection, 0)
+			engine.ShowSQL(!c.HiddenSQL)
+			engine.SetLogger(NewXormLogger(logger, !c.HiddenSQL))
+
+			d.engines[name] = engine
 		}
 
-		if c.MaxIdleConnection != 0 {
-			engine.SetMaxIdleConns(c.MaxIdleConnection)
-		}
-		if c.MaxOpenConnection != 0 {
-			engine.SetMaxOpenConns(c.MaxOpenConnection)
-		}
-		if c.MaxIdleTime != 0 {
-			engine.SetConnMaxLifetime(c.MaxIdleTime)
-			engine.DB().SetConnMaxIdleTime(c.MaxIdleTime)
-		}
+	case DialectPostgres:
+		for name, c := range cfg.App.Middleware.Pgsql {
+			if !c.Startup {
+				continue
+			}
 
-		engine.ShowSQL(!c.HiddenSQL)
-		engine.SetLogger(NewXormLogger(logger, !c.HiddenSQL))
+			engine, err := xorm.NewEngine("pgx", c.URL)
+			if err != nil {
+				return fmt.Errorf("open postgres %q: %w", name, err)
+			}
 
-		if cfg.App.Middleware.Tracing.Database.Enabled {
-			engine.AddHook(otelxorm.NewTracingHook(&cfg.App.Middleware.Tracing))
+			applyPool(engine, c.MaxIdleConnection, c.MaxOpenConnection, c.MaxIdleTime)
+			engine.ShowSQL(!c.HiddenSQL)
+			engine.SetLogger(NewXormLogger(logger, !c.HiddenSQL))
+
+			d.engines[name] = engine
 		}
-
-		d.mysqls[name] = engine
-	}
-
-	for name, c := range cfg.App.Middleware.Sqlite {
-		if !c.Startup {
-			continue
-		}
-
-		schema, rest, err := parseDSN(c.Dsn)
-		if err != nil {
-			return fmt.Errorf("open sqlite %q: %w", name, err)
-		}
-
-		engine, err := xorm.NewEngine(schema, rest)
-		if err != nil {
-			return fmt.Errorf("open sqlite %q: %w", name, err)
-		}
-
-		if c.MaxIdleConnection != 0 {
-			engine.SetMaxIdleConns(c.MaxIdleConnection)
-		}
-		if c.MaxOpenConnection != 0 {
-			engine.SetMaxOpenConns(c.MaxOpenConnection)
-		}
-
-		engine.ShowSQL(!c.HiddenSQL)
-		engine.SetLogger(NewXormLogger(logger, !c.HiddenSQL))
-
-		d.sqlites[name] = engine
-	}
-
-	for name, c := range cfg.App.Middleware.Pgsql {
-		if !c.Startup {
-			continue
-		}
-
-		opt, err := pg.ParseURL(c.URL)
-		if err != nil {
-			return fmt.Errorf("open pgsql %q: %w", name, err)
-		}
-		d.pgsqls[name] = pg.Connect(opt)
 	}
 
 	return nil
+}
+
+func applyPool(engine *xorm.Engine, maxIdle, maxOpen int, maxIdleTime time.Duration) {
+	if maxIdle != 0 {
+		engine.SetMaxIdleConns(maxIdle)
+	}
+	if maxOpen != 0 {
+		engine.SetMaxOpenConns(maxOpen)
+	}
+	if maxIdleTime != 0 {
+		engine.SetConnMaxLifetime(maxIdleTime)
+		engine.DB().SetConnMaxIdleTime(maxIdleTime)
+	}
 }
 
 func (d *Databases) close() error {
@@ -154,133 +197,65 @@ func (d *Databases) close() error {
 	defer d.mu.Unlock()
 
 	var errs []error
-	for name, engine := range d.mysqls {
+	for name, engine := range d.engines {
 		if err := engine.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("close mysql %q: %w", name, err))
-		}
-	}
-	for name, engine := range d.sqlites {
-		if err := engine.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("close sqlite %q: %w", name, err))
-		}
-	}
-	for name, db := range d.pgsqls {
-		if err := db.Close(); err != nil {
-			errs = append(errs, fmt.Errorf("close pgsql %q: %w", name, err))
+			errs = append(errs, fmt.Errorf("close %s %q: %w", d.dialect, name, err))
 		}
 	}
 
-	d.mysqls = nil
-	d.sqlites = nil
-	d.pgsqls = nil
+	d.engines = nil
 
 	return errors.Join(errs...)
 }
 
 func (d *Databases) healthy(ctx context.Context) []error {
-	type namedEngine struct {
-		name   string
-		engine *xorm.Engine
-	}
-	type namedPgsql struct {
-		name string
-		db   *pg.DB
-	}
-
 	d.mu.RLock()
-	mysqls := make([]namedEngine, 0, len(d.mysqls))
-	for name, engine := range d.mysqls {
-		mysqls = append(mysqls, namedEngine{name: name, engine: engine})
-	}
-	sqlites := make([]namedEngine, 0, len(d.sqlites))
-	for name, engine := range d.sqlites {
-		sqlites = append(sqlites, namedEngine{name: name, engine: engine})
-	}
-	pgsqls := make([]namedPgsql, 0, len(d.pgsqls))
-	for name, db := range d.pgsqls {
-		pgsqls = append(pgsqls, namedPgsql{name: name, db: db})
+	engines := make(map[string]*xorm.Engine, len(d.engines))
+	for name, engine := range d.engines {
+		engines[name] = engine
 	}
 	d.mu.RUnlock()
 
 	var errs []error
-	for _, item := range mysqls {
-		if err := item.engine.PingContext(ctx); err != nil {
-			errs = append(errs, fmt.Errorf("mysql %q: %w", item.name, err))
-		}
-	}
-	for _, item := range sqlites {
-		if err := item.engine.PingContext(ctx); err != nil {
-			errs = append(errs, fmt.Errorf("sqlite %q: %w", item.name, err))
-		}
-	}
-	for _, item := range pgsqls {
-		if err := item.db.Ping(ctx); err != nil {
-			errs = append(errs, fmt.Errorf("pgsql %q: %w", item.name, err))
+	for name, engine := range engines {
+		if err := engine.PingContext(ctx); err != nil {
+			errs = append(errs, fmt.Errorf("%s %q: %w", d.dialect, name, err))
 		}
 	}
 	return errs
 }
 
-// MySQL 返回指定名称的 MySQL xorm 引擎。
-func (d *Databases) MySQL(name string) (*xorm.Engine, error) {
+// Engine 返回指定名称的 xorm 引擎。
+func (d *Databases) Engine(name string) (*xorm.Engine, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	engine, ok := d.mysqls[name]
+	engine, ok := d.engines[name]
 	if !ok {
-		return nil, resourceError("mysql", name, nil)
+		return nil, resourceError(string(d.dialect), name, nil)
 	}
 	return engine, nil
 }
 
-// DefaultMySQL 返回 default 名称的 MySQL xorm 引擎。
-func (d *Databases) DefaultMySQL() (*xorm.Engine, error) {
-	return d.MySQL(defaultName)
+// DefaultEngine 返回 default 名称的 xorm 引擎。
+func (d *Databases) DefaultEngine() (*xorm.Engine, error) {
+	return d.Engine(defaultName)
 }
 
-// SQLite 返回指定名称的 SQLite xorm 引擎。
-func (d *Databases) SQLite(name string) (*xorm.Engine, error) {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
-	engine, ok := d.sqlites[name]
-	if !ok {
-		return nil, resourceError("sqlite", name, nil)
+// Dialect 返回当前插件使用的数据库方言。
+func (d *Databases) Dialect() Dialect {
+	if d == nil {
+		return ""
 	}
-	return engine, nil
-}
-
-// DefaultSQLite 返回 default 名称的 SQLite xorm 引擎。
-func (d *Databases) DefaultSQLite() (*xorm.Engine, error) {
-	return d.SQLite(defaultName)
-}
-
-// Postgres 返回指定名称的 go-pg 客户端。
-func (d *Databases) Postgres(name string) (*pg.DB, error) {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-
-	db, ok := d.pgsqls[name]
-	if !ok {
-		return nil, resourceError("pgsql", name, nil)
-	}
-	return db, nil
-}
-
-// DefaultPostgres 返回 default 名称的 go-pg 客户端。
-func (d *Databases) DefaultPostgres() (*pg.DB, error) {
-	return d.Postgres(defaultName)
+	return d.dialect
 }
 
 // Name 返回插件名。
 func (d *Databases) Name() string { return "databases" }
 
-// Start 把默认的 xorm 引擎注册到 with 包（优先 MySQL，其次 SQLite），
-// 然后阻塞到 ctx 结束。
+// Start 把默认引擎注册到 with 包，然后阻塞到 ctx 结束。
 func (d *Databases) Start(ctx context.Context) error {
-	if engine, err := d.DefaultMySQL(); err == nil {
-		with.SetDefault(engine)
-	} else if engine, err := d.DefaultSQLite(); err == nil {
+	if engine, err := d.DefaultEngine(); err == nil {
 		with.SetDefault(engine)
 	}
 
@@ -301,19 +276,9 @@ func (d *Databases) Close(context.Context) error {
 	return d.close()
 }
 
-// ProvideDefaultMySQL 提供 default 名称的 MySQL xorm 引擎。
-func ProvideDefaultMySQL(d *Databases) (*xorm.Engine, error) {
-	return d.DefaultMySQL()
-}
-
-// ProvideDefaultSQLite 提供 default 名称的 SQLite xorm 引擎。
-func ProvideDefaultSQLite(d *Databases) (*xorm.Engine, error) {
-	return d.DefaultSQLite()
-}
-
-// ProvideDefaultPostgres 提供 default 名称的 Postgres 客户端。
-func ProvideDefaultPostgres(d *Databases) (*pg.DB, error) {
-	return d.DefaultPostgres()
+// ProvideDefaultEngine 提供 default 实例的 xorm 引擎。
+func ProvideDefaultEngine(d *Databases) (*xorm.Engine, error) {
+	return d.DefaultEngine()
 }
 
 // parseDSN splits "<dialect>:<dsn>" into schema and the remaining DSN.
