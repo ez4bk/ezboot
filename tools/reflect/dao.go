@@ -26,6 +26,7 @@ var (
 	idXormSession          = &QualifiedIdentifier{Import: "xorm.io/xorm", Identifier: "Session"}
 	idEZBootLogger         = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot", Identifier: "Logger"}
 	idWithSession          = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/with", Identifier: "DefaultSession"}
+	idWithRedis            = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/with", Identifier: "DefaultRedis"}
 	idLogWarn              = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/elog", Identifier: "Warnw"}
 	idEXormPager           = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/exorm", Identifier: "Pager"}
 	idEXormTokenPager      = &QualifiedIdentifier{Import: "github.com/ez4bk/ezboot/exorm", Identifier: "TokenPager"}
@@ -76,10 +77,6 @@ func (r *daoRender) Render(w io.Writer) error {
 	g.Commentf("%s manage the %s model", typename, r.table.Name)
 	g.Type().Id(typename).StructFunc(func(gp *jen.Group) {
 		gp.Id("log").Op("*").Qual(idEZBootLogger.Import, idEZBootLogger.Identifier)
-		// 如果该表启用缓存
-		if r.useCache {
-			gp.Id("cache").Op("*").Qual(idRedisClient.Import, idRedisClient.Identifier)
-		}
 	})
 
 	namedPtrTypename := jen.Id("dao").Op("*").Id(typename)
@@ -102,6 +99,7 @@ func (r *daoRender) Render(w io.Writer) error {
 	r.jenImportPkg(g, idXormSession)
 	r.jenImportPkg(g, idEZBootLogger)
 	r.jenImportPkg(g, idWithSession)
+	r.jenImportPkg(g, idWithRedis)
 	r.jenImportPkg(g, idLogWarn)
 	r.jenImportPkg(g, idEXormPager)
 	r.jenImportPkg(g, idEXormNew)
@@ -135,7 +133,17 @@ func (r *daoRender) GetMethod(g *jen.File, pTypename *jen.Statement) {
 		// 如果启用了缓存，就先从缓存中读取
 		if r.useCache {
 			op = "="
-			gp.Id("data").Op(",").Err().Op(":=").Id("dao").Dot("cache").Dot("Get").Call(r.jenModelIdCreateKey(false)).Dot("Bytes").Call()
+			gp.Var().Id("data").Index().Byte()
+			gp.Err().Op(":=").Add(idWithRedis.AsCode()).CallFunc(func(gp *jen.Group) {
+				gp.Id(vCtx).Op(",").
+					Func().Params(jen.Id("cache").Op("*").Add(idRedisClient.AsCode())).Error().
+					Block(
+						jen.Var().Id("cacheErr").Error(),
+						jen.Id("data").Op(",").Id("cacheErr").Op("=").
+							Id("cache").Dot("Get").Call(r.jenModelIdCreateKey(false)).Dot("Bytes").Call(),
+						jen.Return(jen.Id("cacheErr")),
+					)
+			})
 			gp.If(jen.Err().Op("==").Nil()).Block(
 				jen.Err().Op("=").Qual(idJsonUnmarshal.Import, idJsonUnmarshal.Identifier).Call(jen.Id("data"), modelPtr),
 				jen.If(jen.Err().Op("==").Nil()).Block(
@@ -179,12 +187,22 @@ func (r *daoRender) GetMethod(g *jen.File, pTypename *jen.Statement) {
 
 		if r.useCache {
 			gp.Line().Id("value").Op(",").Err().Op(":=").Qual(idJsonMarshal.Import, idJsonMarshal.Identifier).Call(jen.Id("model"))
-			gp.If(jen.Err().Op("==").Nil()).Block(
-				jen.Err().Op("=").Id("dao").Dot("cache").Dot("Set").Call(r.jenModelIdCreateKey(false), jen.Id("string").Call(jen.Id("value")), jen.Qual(idTimeDuration.Import, idTimeDuration.Identifier).Call(jen.Id(strconv.FormatInt(int64(r.cacheExpired), 10)))).Dot("Err").Call(),
-				jen.If(jen.Err().Op("!=").Nil()).Block(
+			gp.If(jen.Err().Op("==").Nil()).BlockFunc(func(gp *jen.Group) {
+				gp.Err().Op("=").Add(idWithRedis.AsCode()).CallFunc(func(gp *jen.Group) {
+					gp.Id(vCtx).Op(",").
+						Func().Params(jen.Id("cache").Op("*").Add(idRedisClient.AsCode())).Error().
+						Block(
+							jen.Return(jen.Id("cache").Dot("Set").Call(
+								r.jenModelIdCreateKey(false),
+								jen.Id("string").Call(jen.Id("value")),
+								jen.Qual(idTimeDuration.Import, idTimeDuration.Identifier).Call(jen.Id(strconv.FormatInt(int64(r.cacheExpired), 10))),
+							).Dot("Err").Call()),
+						)
+				})
+				gp.If(jen.Err().Op("!=").Nil()).Block(
 					jen.Id("dao").Dot("log").Dot("Warnw").Call(jen.Lit("failed to set redis cache"), jen.Lit("error"), jen.Err()),
-				),
-			)
+				)
+			})
 			gp.Line()
 		}
 
@@ -489,18 +507,12 @@ func (r *daoRender) Constructor(g *jen.File, typename string, pTypename *jen.Sta
 	funcName := r.constructorNameMapper.Mapping(typename)
 	outParams := jen.List(pTypename, jen.Error())
 	inParams := jen.Id("log").Op("*").Add(idEZBootLogger.AsCode())
-	if r.useCache {
-		inParams = jen.List(inParams, jen.Id("cache").Op("*").Add(idRedisClient.AsCode()))
-	}
 	loggerWith := jen.List(r.jenLiterals("component", "dao", "dao", r.table.Name)...)
 
 	g.Func().Id(funcName).Params(inParams).Params(outParams).BlockFunc(func(gp *jen.Group) {
 		gp.ReturnFunc(func(gp *jen.Group) {
 			gp.ListFunc(func(gp *jen.Group) {
 				jd := jen.Dict{jen.Id("log"): jen.Id("log").Dot("With").Call(loggerWith)}
-				if r.useCache {
-					jd[jen.Id("cache")] = jen.Id("cache")
-				}
 
 				gp.Op("&").Id(typename).Values(jd) // dao
 				gp.Nil()                           // error
@@ -556,7 +568,13 @@ func (r *daoRender) jenReturnErrWrap(gp *jen.Group, msg string, args ...any) *je
 // jenDeleteCache 删除redis缓存
 func (r *daoRender) jenDeleteCache(gp *jen.Group, member bool) *jen.Group {
 	gp.Line()
-	gp.Err().Op("=").Id("dao").Dot("cache").Dot("Del").Call(r.jenModelIdCreateKey(member)).Dot("Err").Call()
+	gp.Err().Op("=").Add(idWithRedis.AsCode()).CallFunc(func(gp *jen.Group) {
+		gp.Id(vCtx).Op(",").
+			Func().Params(jen.Id("cache").Op("*").Add(idRedisClient.AsCode())).Error().
+			Block(
+				jen.Return(jen.Id("cache").Dot("Del").Call(r.jenModelIdCreateKey(member)).Dot("Err").Call()),
+			)
+	})
 	r.jenErrNotNilLogRedisError(gp, "failed to delete redis cache")
 	gp.Line()
 	return gp
