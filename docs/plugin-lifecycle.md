@@ -178,7 +178,7 @@ ezboot/
 
 | 插件 | 包 | `Start` | `Ready` | `Drain` | `Close` |
 |---|---|---|---|---|---|
-| `MySQL` | `infra/db.go` | 构造期建 pool；Start 注册 default → 阻塞 | Ping default | — | 关 pool |
+| `Databases` | `infra/db.go` | 构造期建 pool；Start 注册 with 默认引擎 → 阻塞 | Ping 全部 | — | 关 pool |
 | `Redis` | `infra/redis.go` | 构造期建 client；Start 注册 default → 阻塞 | Ping | — | 关闭 |
 | `Kafka` | `infra/kafka.go` | 构造期记录 broker；Start 阻塞 | 探 broker | — | 关闭 |
 | `RabbitMQ` | `infra/rabbitmq.go` | 构造期建对象；Start 启动重连 → 阻塞 | 探 channel | — | 关闭 |
@@ -237,7 +237,12 @@ func NewExampleDAO(log *ezboot.Logger, cache *redis.Client) (*ExampleDAO, error)
 
 | ProviderSet | 包含 | default provider |
 |---|---|---|
-| `infra.MySQLProviderSet` | `NewMySQL` + `ProvideDefaultMySQL`（`*xorm.Engine`） | 有 |
+| `infra.DatabasesProviderSet` | `NewDatabases` | — |
+| `infra.MySQLProviderSet` | `ProvideDefaultMySQL`（`*xorm.Engine`） | MySQL default |
+| `infra.SQLiteProviderSet` | `ProvideDefaultSQLite`（`*xorm.Engine`） | SQLite default |
+| `infra.PostgresProviderSet` | `ProvideDefaultPostgres`（`*pg.DB`） | Postgres default |
+
+MySQL 与 SQLite 的默认实例都是 `*xorm.Engine`，wire 无法区分，所以同一个 injector 里**只能引入其中一个**；Postgres 返回 `*pg.DB`，可以和任意一个共存。
 | `infra.RedisProviderSet` | `NewRedis` + `ProvideDefaultRedis`（`*redis.Client`） | 有 |
 | `infra.ElasticsearchProviderSet` | `NewElasticsearch` + `ProvideDefaultElasticsearch`（`*elasticsearch.Client`） | 有 |
 | `infra.EtcdProviderSet` | `NewEtcd` + `ProvideDefaultEtcd`（`*clientv3.Client`） | 有 |
@@ -369,7 +374,7 @@ var ProviderSet = wire.NewSet(
 // 调用方（http / grpc 由应用自己构造）
 func NewPlugins(
     otel *tracing.OTEL,
-    db *infra.MySQL,
+    db *infra.Databases,
     gc *grpcclient.GRPCClient,
     gs *grpc.Server,
     hs *http.Server,

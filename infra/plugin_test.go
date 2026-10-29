@@ -19,7 +19,7 @@ func TestPluginsRequireConfiguration(t *testing.T) {
 
 	tests := map[string]func() error{
 		"mysql": func() error {
-			_, err := NewMySQL(empty, logging.Default())
+			_, err := NewDatabases(empty, logging.Default())
 			return err
 		},
 		"redis": func() error {
@@ -43,7 +43,7 @@ func TestPluginsRequireConfiguration(t *testing.T) {
 			return err
 		},
 		"nil-config": func() error {
-			_, err := NewMySQL(nil, logging.Default())
+			_, err := NewDatabases(nil, logging.Default())
 			return err
 		},
 	}
@@ -61,20 +61,20 @@ func TestPluginNames(t *testing.T) {
 	mysqlCfg := &config.Config{}
 	mysqlCfg.App.Middleware.Mysql = conf_type.Mysqls{"default": {}}
 
-	mysql, err := NewMySQL(mysqlCfg, logging.Default())
+	databases, err := NewDatabases(mysqlCfg, logging.Default())
 	if err != nil {
-		t.Fatalf("NewMySQL: %v", err)
+		t.Fatalf("NewDatabases: %v", err)
 	}
-	if mysql.Name() != "mysql" {
-		t.Fatalf("Name() = %q", mysql.Name())
+	if databases.Name() != "databases" {
+		t.Fatalf("Name() = %q", databases.Name())
 	}
 }
 
 func TestPluginCloseIsNilSafe(t *testing.T) {
 	ctx := context.Background()
 
-	if err := (*MySQL)(nil).Close(ctx); err != nil {
-		t.Fatalf("nil MySQL.Close() = %v", err)
+	if err := (*Databases)(nil).Close(ctx); err != nil {
+		t.Fatalf("nil Databases.Close() = %v", err)
 	}
 	if err := (*Redis)(nil).Close(ctx); err != nil {
 		t.Fatalf("nil Redis.Close() = %v", err)
@@ -93,7 +93,7 @@ func TestPluginCloseIsNilSafe(t *testing.T) {
 	}
 }
 
-func TestMySQLExposesTheEnginePool(t *testing.T) {
+func TestDatabasesExposesEngines(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.App.Middleware.Mysql = conf_type.Mysqls{
 		"default": {
@@ -102,9 +102,9 @@ func TestMySQLExposesTheEnginePool(t *testing.T) {
 		},
 	}
 
-	p, err := NewMySQL(cfg, logging.Default())
+	p, err := NewDatabases(cfg, logging.Default())
 	if err != nil {
-		t.Fatalf("NewMySQL() = %v", err)
+		t.Fatalf("NewDatabases() = %v", err)
 	}
 	t.Cleanup(func() {
 		if err := p.Close(context.Background()); err != nil {
@@ -112,22 +112,19 @@ func TestMySQLExposesTheEnginePool(t *testing.T) {
 		}
 	})
 
-	db, err := p.DefaultDB()
+	engine, err := p.DefaultMySQL()
 	if err != nil {
-		t.Fatalf("DefaultDB() = %v", err)
+		t.Fatalf("DefaultMySQL() = %v", err)
 	}
-	if db.Engine() == nil {
-		t.Fatal("DB.Engine() is nil")
+	if engine == nil {
+		t.Fatal("DefaultMySQL() returned a nil engine")
 	}
-	if db.SQL() == nil {
-		t.Fatal("DB.SQL() is nil; the xorm engine pool was not exposed")
-	}
-	if got := db.SQL(); got != db.Engine().DB().DB {
-		t.Fatal("DB.SQL() does not point at the xorm engine pool")
+	if engine.DB().DB == nil {
+		t.Fatal("the xorm engine pool was not exposed")
 	}
 }
 
-func TestMySQLStartRegistersTheDefaultDatabase(t *testing.T) {
+func TestDatabasesStartRegistersTheDefaultDatabase(t *testing.T) {
 	with.SetDefault(nil)
 	t.Cleanup(func() { with.SetDefault(nil) })
 
@@ -139,9 +136,9 @@ func TestMySQLStartRegistersTheDefaultDatabase(t *testing.T) {
 		},
 	}
 
-	p, err := NewMySQL(cfg, logging.Default())
+	p, err := NewDatabases(cfg, logging.Default())
 	if err != nil {
-		t.Fatalf("NewMySQL() = %v", err)
+		t.Fatalf("NewDatabases() = %v", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -190,13 +187,13 @@ func TestDefaultProviders(t *testing.T) {
 		"default": {Startup: true, Addr: "127.0.0.1:6379"},
 	}
 
-	mysql, err := NewMySQL(cfg, logging.Default())
+	databases, err := NewDatabases(cfg, logging.Default())
 	if err != nil {
-		t.Fatalf("NewMySQL: %v", err)
+		t.Fatalf("NewDatabases: %v", err)
 	}
-	t.Cleanup(func() { _ = mysql.Close(context.Background()) })
+	t.Cleanup(func() { _ = databases.Close(context.Background()) })
 
-	engine, err := ProvideDefaultMySQL(mysql)
+	engine, err := ProvideDefaultMySQL(databases)
 	if err != nil {
 		t.Fatalf("ProvideDefaultMySQL: %v", err)
 	}
