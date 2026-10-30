@@ -206,6 +206,5 @@ Writing your own plugin is the same five methods: embed `PluginBase`, implement 
 
 ## Documentation
 
-- [Plugin lifecycle design](docs/plugin-lifecycle.en.md) — phases, contracts, provider sets, decision log
-- [Plugin lifecycle design (Chinese original)](docs/plugin-lifecycle.md)
+- [Wiki](https://github.com/ez4bk/ezboot/wiki) — technical details and architecture decision records (Chinese)
 - [ezboot-template](https://github.com/ez4bk/ezboot-template) — reference service: wiring, a custom plugin, Helm chart

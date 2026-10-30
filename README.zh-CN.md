@@ -206,6 +206,5 @@ app:
 
 ## 文档
 
-- [插件生命周期设计](docs/plugin-lifecycle.md) —— 阶段、契约、ProviderSet、决策记录
-- [英文译本](docs/plugin-lifecycle.en.md)
+- [Wiki](https://github.com/ez4bk/ezboot/wiki) —— 技术细节（插件、生命周期、装配、配置）与架构变迁记录
 - [ezboot-template](https://github.com/ez4bk/ezboot-template) —— 参考服务：wire 装配、自定义插件、Helm chart
