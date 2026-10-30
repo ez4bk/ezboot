@@ -4,6 +4,8 @@
 > 范围：`internal/gin-boot/boot.go`、`app.go`、`http/`、`grpc/`、`internal/gin-boot/infra/`、wire 与 template 装配方式。
 > 本文只描述设计与迁移路径，不含实现。
 
+> 英文译本：[plugin-lifecycle.en.md](plugin-lifecycle.en.md)
+
 ## 1. 背景
 
 当前框架有三个互相纠缠的问题：
