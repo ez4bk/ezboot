@@ -188,6 +188,8 @@ github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0 h1:Ovs26xHkKqVztRpIrF/92Bcuy
 github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0/go.mod h1:8NvIoxWQoOIhqOTXgfV/d3M/q6VIi02HzZEHgUlZvzk=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.31.0 h1:Bd7KaOxzULLxtZ/K5s1aLbWhR0+5RToO65TXHsf3bqQ=
 github.com/grpc-ecosystem/grpc-gateway/v2 v2.31.0/go.mod h1:nN7ts3dFXKtCZWc//yfkpcQNKJABg16/uDVAZpLDalo=
+github.com/grpc-ecosystem/grpc-gateway/v2 v2.33.0 h1:5T5Ns3kMpWr+z3s5ZA0e7ljVyWNVNxK76sHPAxi5D1k=
+github.com/grpc-ecosystem/grpc-gateway/v2 v2.33.0/go.mod h1:oWNYw09cH8wl8fFgC5hKlBLxR4XfKy2KQpP8MJjeCcc=
 github.com/hpcloud/tail v1.0.0/go.mod h1:ab1qPbhIpdTxEkNHXyeSf5vhxWSCs/tWer42PpOxQnU=
 github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2s0bqwp9tc8=
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
@@ -377,6 +379,7 @@ go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ
 go.opentelemetry.io/auto/sdk v1.2.1/go.mod h1:KRTj+aOaElaLi+wW1kO/DZRXwkF4C5xPbEe3ZiIhN7Y=
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0 h1:3g7B90UzBltIDKq1/5mrTGxTnOFDV0ICOhLoxiZ8jlg=
 go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.71.0/go.mod h1:Ef8SuTh59BT7+ofpDxN9z+yOlc4t2GjLmKDgYNJL/NU=
+go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0 h1:LxwW/9ctSCv+QkE/cLR7M91ZIkXNMqJtEMi1vCw9U8s=
 go.opentelemetry.io/otel v1.47.0 h1:j7ALJ/zgkS7Z6aeJW09p8VC9804bC+PpeTfCD4XPnOM=
 go.opentelemetry.io/otel v1.47.0/go.mod h1:8wS9O2qfXrYrzp6hIF/HOYJJf/wIhFPhR2xLuP+iXQU=
 go.opentelemetry.io/otel/exporters/jaeger v1.17.0 h1:D7UpUy2Xc2wsi1Ras6V40q806WM07rqoCWzXu7Sqy+4=
@@ -418,6 +421,8 @@ golang.org/x/crypto v0.58.0/go.mod h1:Xh+kl5A+M0gMiWDytH2Hhr5Z7WbNCpv/eB/EFgfSk+
 golang.org/x/exp v0.0.0-20190121172915-509febef88a4/go.mod h1:CJ0aWSM057203Lf6IL+f9T1iT9GByDxfZKAQTCR3kQA=
 golang.org/x/exp v0.0.0-20261011100332-faecfb24eb49 h1:pQo5TwmxKJvI8k39uYS2Gqkk8OXWxX/TMSis2Twp1AQ=
 golang.org/x/exp v0.0.0-20261011100332-faecfb24eb49/go.mod h1:DBoxwWhjaW8DJJw/YeM4zpeOKMC1FMXSblsYy+1mFSw=
+golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e h1:HgI6W1OolKK6tcV74is+rl9SMT0njsHlp0TbQiGXI/A=
+golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e/go.mod h1:DBoxwWhjaW8DJJw/YeM4zpeOKMC1FMXSblsYy+1mFSw=
 golang.org/x/lint v0.0.0-20181026193005-c67002cb31c3/go.mod h1:UVdnD1Gm6xHRNCYTkRU2/jEulfH38KcIWyp/GAMgvoE=
 golang.org/x/lint v0.0.0-20190227174305-5b3e6a55c961/go.mod h1:wehouNa3lNwaWXcvxsM5YxQ5yQlVC4a0KAMCusXpPoU=
 golang.org/x/lint v0.0.0-20190313153728-d0100b6bd8b3/go.mod h1:6SW0HCj/g11FgYtHlgUYUwCkIfeOF89ocIRzGO/8vkc=
@@ -502,8 +507,12 @@ google.golang.org/genproto v0.0.0-20200526211855-cb27e3aa2013/go.mod h1:NbSheEEY
 google.golang.org/genproto v0.0.0-20200806141610-86f49bd18e98/go.mod h1:FWY/as6DDZQgahTzZj3fqbO1CbirC29ZNUFHwi0/+no=
 google.golang.org/genproto/googleapis/api v0.0.0-20261005182115-fad411399dd8 h1:cFbkNigDInw+wVTXc+CyhUsoHGJCw0BR6mlNoRVfre0=
 google.golang.org/genproto/googleapis/api v0.0.0-20261005182115-fad411399dd8/go.mod h1:QK6p7IgD7IZEZJBhhSUCib5X2vMOzlrGCGUw2XyVDh0=
+google.golang.org/genproto/googleapis/api v0.0.0-20261026165753-2ffab32bce7e h1:e789sLZjeTdc02ZCQGTSzHOu0fR73+dwPQVKUp67Z88=
+google.golang.org/genproto/googleapis/api v0.0.0-20261026165753-2ffab32bce7e/go.mod h1:vHV3wJM9WZyfV7GyB+OQGq5dWVrFwCDxapPK4WlRD88=
 google.golang.org/genproto/googleapis/rpc v0.0.0-20261005182115-fad411399dd8 h1:0SXBqli5dnuCKMjI/X3FM226zEaEa0GUcSCJtN1vL2o=
 google.golang.org/genproto/googleapis/rpc v0.0.0-20261005182115-fad411399dd8/go.mod h1:OaIUM3+LpYcK2GXM4FTmhWoIq371Owdr+Cc7/BsYHHc=
+google.golang.org/genproto/googleapis/rpc v0.0.0-20261019180522-ce908d29299b h1:6WNWHZk91dp4gZ25642OALkuG1UVNZbwENJD19DnB8k=
+google.golang.org/genproto/googleapis/rpc v0.0.0-20261019180522-ce908d29299b/go.mod h1:OaIUM3+LpYcK2GXM4FTmhWoIq371Owdr+Cc7/BsYHHc=
 google.golang.org/grpc v1.17.0/go.mod h1:6QZJwpn2B+Zp71q/5VxRsJ6NXXVCE5NRUHRo+f3cWCs=
 google.golang.org/grpc v1.19.0/go.mod h1:mqu4LbDTu4XGKhr4mRzUsmM4RtVoemTSY81AxZiDr8c=
 google.golang.org/grpc v1.23.0/go.mod h1:Y5yQAOtifL1yxbo5wqy6BxZv8vAUGQwXBOALyacEbxg=
