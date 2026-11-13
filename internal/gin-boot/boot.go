@@ -3,6 +3,7 @@ package boot
 import (
 	"flag"
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
@@ -172,9 +173,12 @@ var (
 )
 
 // Migrate 执行数据库自动迁移。Application 在启动插件之前调用它。
-func Migrate() error {
+//
+// fsys 是应用内嵌的迁移文件系统；为 nil 时回退到进程工作目录下的
+// schemas/，以兼容未使用 //go:embed 的服务。
+func Migrate(fsys fs.FS) error {
 	migrateOnce.Do(func() {
-		migrateErr = doMigration()
+		migrateErr = doMigration(fsys)
 	})
 
 	return migrateErr
@@ -203,7 +207,7 @@ func ensureLogPath() string {
 	return filepath.Join(logDir, logFilename)
 }
 
-func doMigration() error {
+func doMigration(fsys fs.FS) error {
 	if !config.Conf.App.DBMigration.AutoMigrate {
 		return nil
 	}
@@ -221,5 +225,5 @@ func doMigration() error {
 		return fmt.Errorf("auto migration enabled but middleware.mysql.default.dsn is empty")
 	}
 
-	return migration.Run(defaultMysql.Dsn, config.Conf.App.Name)
+	return migration.Run(defaultMysql.Dsn, config.Conf.App.Name, fsys)
 }

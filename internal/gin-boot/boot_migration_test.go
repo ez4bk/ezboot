@@ -1,9 +1,9 @@
 package boot
 
 import (
-	"os"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/ez4bk/ezboot/internal/gin-boot/conf_type"
 	"github.com/ez4bk/ezboot/internal/gin-boot/config"
@@ -17,7 +17,7 @@ func TestDoMigrationDisabled(t *testing.T) {
 
 	config.Conf = &config.Config{}
 
-	if err := doMigration(); err != nil {
+	if err := doMigration(nil); err != nil {
 		t.Fatalf("doMigration() error = %v", err)
 	}
 }
@@ -32,7 +32,7 @@ func TestDoMigrationRequiresDefaultMysql(t *testing.T) {
 	config.Conf.App.Name = "demo"
 	config.Conf.App.DBMigration.AutoMigrate = true
 
-	err := doMigration()
+	err := doMigration(nil)
 	if err == nil || !strings.Contains(err.Error(), "middleware.mysql.default") {
 		t.Fatalf("doMigration() error = %v, want missing default mysql error", err)
 	}
@@ -50,7 +50,7 @@ func TestDoMigrationRequiresAppName(t *testing.T) {
 		"default": {Dsn: "user:password@tcp(127.0.0.1:3306)/demo"},
 	}
 
-	err := doMigration()
+	err := doMigration(nil)
 	if err == nil || !strings.Contains(err.Error(), "app.name") {
 		t.Fatalf("doMigration() error = %v, want missing app name error", err)
 	}
@@ -69,29 +69,21 @@ func TestDoMigrationRequiresDefaultMysqlDSN(t *testing.T) {
 		"default": {},
 	}
 
-	err := doMigration()
+	err := doMigration(nil)
 	if err == nil || !strings.Contains(err.Error(), "mysql.default.dsn") {
 		t.Fatalf("doMigration() error = %v, want missing default mysql dsn error", err)
 	}
 }
 
+// TestDoMigrationRequiresSchemasDirectory 覆盖未注入文件系统时回退到
+// 工作目录 schemas/ 的路径：目录不存在必须报出可诊断的错误。
 func TestDoMigrationRequiresSchemasDirectory(t *testing.T) {
-	originalConfig := config.Conf
-	originalWorkingDirectory, err := os.Getwd()
-	if err != nil {
-		t.Fatalf("os.Getwd() error = %v", err)
-	}
-
+	original := config.Conf
 	t.Cleanup(func() {
-		config.Conf = originalConfig
-		if err := os.Chdir(originalWorkingDirectory); err != nil {
-			t.Errorf("restore working directory error = %v", err)
-		}
+		config.Conf = original
 	})
 
-	if err := os.Chdir(t.TempDir()); err != nil {
-		t.Fatalf("os.Chdir() error = %v", err)
-	}
+	t.Chdir(t.TempDir())
 
 	config.Conf = &config.Config{}
 	config.Conf.App.Name = "demo"
@@ -100,8 +92,43 @@ func TestDoMigrationRequiresSchemasDirectory(t *testing.T) {
 		"default": {Dsn: "user:password@tcp(127.0.0.1:3306)/demo"},
 	}
 
-	err = doMigration()
+	err := doMigration(nil)
 	if err == nil || !strings.Contains(err.Error(), "load migration schemas") {
 		t.Fatalf("doMigration() error = %v, want missing schemas directory error", err)
+	}
+}
+
+// TestDoMigrationUsesInjectedFS 确认注入的文件系统取代了工作目录下的
+// schemas/：即便当前目录没有 schemas/，也应当继续走到连接数据库阶段。
+func TestDoMigrationUsesInjectedFS(t *testing.T) {
+	original := config.Conf
+	t.Cleanup(func() {
+		config.Conf = original
+	})
+
+	t.Chdir(t.TempDir())
+
+	config.Conf = &config.Config{}
+	config.Conf.App.Name = "demo"
+	config.Conf.App.DBMigration.AutoMigrate = true
+	config.Conf.App.Middleware.Mysql = conf_type.Mysqls{
+		// 端口 1 必定连不上，用 timeout 兜住极端环境下的拨号等待。
+		"default": {Dsn: "user:password@tcp(127.0.0.1:1)/demo?timeout=1s"},
+	}
+
+	fsys := fstest.MapFS{
+		"000001_demo.up.sql":   &fstest.MapFile{Data: []byte("SELECT 1;")},
+		"000001_demo.down.sql": &fstest.MapFile{Data: []byte("SELECT 1;")},
+	}
+
+	err := doMigration(fsys)
+	if err == nil {
+		t.Fatal("doMigration() error = nil, want connection failure")
+	}
+	if strings.Contains(err.Error(), "load migration schemas") {
+		t.Fatalf("doMigration() error = %v, injected fs must replace the disk schemas directory", err)
+	}
+	if !strings.Contains(err.Error(), "create migration failed") {
+		t.Fatalf("doMigration() error = %v, want failure after the source driver was loaded", err)
 	}
 }

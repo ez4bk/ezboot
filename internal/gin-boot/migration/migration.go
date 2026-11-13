@@ -3,7 +3,7 @@ package migration
 import (
 	"errors"
 	"fmt"
-	"os"
+	"io/fs"
 	"strings"
 
 	"github.com/go-sql-driver/mysql"
@@ -15,10 +15,13 @@ import (
 	"github.com/ez4bk/ezboot/internal/logging"
 )
 
-const schemasDirectory = "schemas"
 const mysqlScheme = "mysql://"
 
-func Run(dsn, appName string) error {
+// Run 以 fsys 为迁移源，将数据库升级到最新版本。
+//
+// fsys 的根目录必须是迁移文件所在目录，例如 //go:embed *.sql 生成的
+// embed.FS 可以直接传入。
+func Run(dsn, appName string, fsys fs.FS) error {
 	if dsn == "" {
 		return fmt.Errorf("migration dsn cannot be empty")
 	}
@@ -32,15 +35,22 @@ func Run(dsn, appName string) error {
 		return fmt.Errorf("complete migration dsn failed: %w", err)
 	}
 
-	source, err := iofs.New(os.DirFS(schemasDirectory), ".")
+	if fsys == nil {
+		return fmt.Errorf("migration fs cannot be nil")
+	}
+
+	driver, err := iofs.New(fsys, ".")
 	if err != nil {
-		return fmt.Errorf("load migration schemas from %q failed: %w", schemasDirectory, err)
+		return fmt.Errorf(
+			"load migration schemas failed: migration files must be at the root of the provided filesystem: %w",
+			err,
+		)
 	}
 
 	// TODO: Strictly validate migration filenames, paired directions, and version continuity before connecting.
-	migrator, err := migrate.NewWithSourceInstance("iofs", source, dsn)
+	migrator, err := migrate.NewWithSourceInstance("iofs", driver, dsn)
 	if err != nil {
-		sourceErr := source.Close()
+		sourceErr := driver.Close()
 		return errors.Join(
 			fmt.Errorf("create migration failed: %w", err),
 			wrapCloseError(sourceErr),
