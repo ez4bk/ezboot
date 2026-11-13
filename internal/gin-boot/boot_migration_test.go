@@ -75,15 +75,13 @@ func TestDoMigrationRequiresDefaultMysqlDSN(t *testing.T) {
 	}
 }
 
-// TestDoMigrationRequiresSchemasDirectory 覆盖未注入文件系统时回退到
-// 工作目录 schemas/ 的路径：目录不存在必须报出可诊断的错误。
-func TestDoMigrationRequiresSchemasDirectory(t *testing.T) {
+// TestDoMigrationRequiresMigrationFS 覆盖 embeds 成为唯一迁移来源后的行为：
+// 没有注入文件系统时必须立刻报错，而不是静默跳过或去读磁盘。
+func TestDoMigrationRequiresMigrationFS(t *testing.T) {
 	original := config.Conf
 	t.Cleanup(func() {
 		config.Conf = original
 	})
-
-	t.Chdir(t.TempDir())
 
 	config.Conf = &config.Config{}
 	config.Conf.App.Name = "demo"
@@ -93,8 +91,8 @@ func TestDoMigrationRequiresSchemasDirectory(t *testing.T) {
 	}
 
 	err := doMigration(nil)
-	if err == nil || !strings.Contains(err.Error(), "load migration schemas") {
-		t.Fatalf("doMigration() error = %v, want missing schemas directory error", err)
+	if err == nil || !strings.Contains(err.Error(), "migration fs cannot be nil") {
+		t.Fatalf("doMigration() error = %v, want missing migration fs error", err)
 	}
 }
 

@@ -36,7 +36,7 @@ func Run(dsn, appName string, fsys fs.FS) error {
 	}
 
 	if fsys == nil {
-		return fmt.Errorf("migration fs cannot be nil")
+		return fmt.Errorf("migration fs cannot be nil: inject the embedded migrations with ezboot.WithMigrations")
 	}
 
 	driver, err := iofs.New(fsys, ".")

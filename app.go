@@ -22,7 +22,7 @@ type Application struct {
 	state    *State
 	timeouts timeouts
 
-	// migrations 是应用内嵌的迁移文件系统；为 nil 时回退到工作目录的 schemas/。
+	// migrations 是应用内嵌的迁移文件系统，由 WithMigrations 注入。
 	migrations fs.FS
 
 	// 兼容旧的装配方式：WithHttpServer / WithGrpcServer
@@ -90,7 +90,7 @@ var ErrNilMigrationFS = errors.New("ezboot: migrations fs is nil")
 
 // WithMigrations 注入应用内嵌的迁移文件系统（通常来自 //go:embed）。
 // 文件系统的根目录必须直接包含 *.up.sql / *.down.sql 迁移文件。
-// 不调用本选项时，框架回退到工作目录下的 schemas/。
+// 开启自动迁移但没有调用本选项时，启动会失败。
 func WithMigrations(fsys fs.FS) ApplicationOption {
 	return func(app *Application) error {
 		if fsys == nil {

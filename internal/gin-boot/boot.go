@@ -174,8 +174,8 @@ var (
 
 // Migrate 执行数据库自动迁移。Application 在启动插件之前调用它。
 //
-// fsys 是应用内嵌的迁移文件系统；为 nil 时回退到进程工作目录下的
-// schemas/，以兼容未使用 //go:embed 的服务。
+// fsys 是应用内嵌的迁移文件系统，由 ezboot.WithMigrations 注入；
+// 未注入时自动迁移会返回错误，不会去读工作目录下的 schemas/。
 func Migrate(fsys fs.FS) error {
 	migrateOnce.Do(func() {
 		migrateErr = doMigration(fsys)
