@@ -70,9 +70,10 @@ var (
 
 // InitConfig InitConfig
 func InitConfig(filepath string) {
-	f, e := os.Open(filepath)
+	f, err := os.Open(filepath)
+	util.ChkErr(err)
 	defer f.Close()
-	util.ChkErr(e)
+
 	Conf = &Config{}
 	d := yaml.NewDecoder(f)
 
@@ -82,57 +83,26 @@ func InitConfig(filepath string) {
 
 	util.ChkErr(d.Decode(Conf))
 
+	// Environment variables take precedence over the values decoded above.
+	// Credentials belong in environment variables so deployments can inject
+	// them from Kubernetes Secrets instead of committing them to config files.
+	applyEnvOverrides(Conf)
+
+	// Decrypt mysql username and password if "Mysql.Encrypt" is true.
 	for k, v := range Conf.App.Middleware.Mysql {
-		// MYSQL_DEFAULT_DSN
-		dsn := os.Getenv(fmt.Sprintf("EZ_MYSQL_%v_DSN", strings.ToUpper(k)))
-		if dsn != "" {
-			Conf.App.Middleware.Mysql[k] = conf_type.Mysql{Dsn: dsn, Startup: v.Startup, Encrypt: v.Encrypt, HiddenSQL: v.HiddenSQL}
+		if !v.Encrypt {
+			continue
 		}
 
-		// Decrypt mysql username and password if "Mysql.Encrypt" is true
-		if v.Encrypt {
-			secret := os.Getenv(ConfigSecretEnv)
-			if secret == "" {
-				util.ChkErr(fmt.Errorf("mysql %q is encrypted but %s is not set", k, ConfigSecretEnv))
-			}
-			decryptDsn, err := decryptMysqlDsn(Conf.App.Middleware.Mysql[k].Dsn, path.Base(filepath), secret)
-			util.ChkErr(err)
-			Conf.App.Middleware.Mysql[k] = conf_type.Mysql{Dsn: decryptDsn, Startup: v.Startup}
+		secret := os.Getenv(ConfigSecretEnv)
+		if secret == "" {
+			util.ChkErr(fmt.Errorf("mysql %q is encrypted but %s is not set", k, ConfigSecretEnv))
 		}
-	}
-	for k := range Conf.App.Middleware.GRPC.Client {
-		addr := os.Getenv(fmt.Sprintf("EZ_GRPC_%v_ADDR", strings.ToUpper(k)))
-		if addr != "" {
-			Conf.App.Middleware.GRPC.Client[k].Addr = addr
-		}
-	}
-	for k := range Conf.App.Middleware.Elasticsearch {
-		esusername := os.Getenv(fmt.Sprintf("EZ_ES_%v_USERNAME", strings.ToUpper(k)))
-		espassword := os.Getenv(fmt.Sprintf("EZ_ES_%v_PASSWORD", strings.ToUpper(k)))
-		if esusername != "" {
-			Conf.App.Middleware.Elasticsearch[k] = conf_type.Elasticsearch{Username: esusername, Password: espassword}
-		}
-	}
-	for k, v := range Conf.App.Middleware.Pgsql {
-		// PGSQL_DEFAULT_DSN
-		url := os.Getenv(fmt.Sprintf("EZ_PGSQL_%v_URL", strings.ToUpper(k)))
-		if url != "" {
-			Conf.App.Middleware.Pgsql[k] = conf_type.Pgsql{URL: url, Startup: v.Startup}
-		}
-	}
 
-	storePerfix := os.Getenv("EZ_STORAGE_PREFIX")
-	if storePerfix != "" {
-		for k, v := range Conf.App.Middleware.Redis {
-			v.Addr = storePerfix + v.Addr
-			Conf.App.Middleware.Redis[k] = v
-		}
-		for k, v := range Conf.App.Middleware.Etcd.Endpoints {
-			Conf.App.Middleware.Etcd.Endpoints[k] = storePerfix + v
-		}
-		for k, v := range Conf.App.Middleware.Kafka.KafkaClusterURL {
-			Conf.App.Middleware.Kafka.KafkaClusterURL[k] = storePerfix + v
-		}
+		decryptDsn, err := decryptMysqlDsn(v.Dsn, path.Base(filepath), secret)
+		util.ChkErr(err)
+		v.Dsn = decryptDsn
+		Conf.App.Middleware.Mysql[k] = v
 	}
 }
 
